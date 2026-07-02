@@ -24,6 +24,352 @@ function fmtDateParts(iso) {
   ];
 }
 
+const SOLUTIONS = {
+  'Malware Detected': {
+    summary: 'Malicious or suspicious files were found in your site. This likely means your site has been compromised and needs immediate attention.',
+    steps: [
+      'Install a malware scanner plugin and run a full scan',
+      'Remove or quarantine all identified suspicious files',
+      'Change all passwords: WordPress admin, cPanel, FTP, and database',
+      'Update all plugins, themes, and WordPress core immediately',
+      'Restore from a clean backup if one is available',
+      'Contact your hosting provider to request a server-side scan',
+    ],
+    plugins: [
+      { name: 'Wordfence Security', desc: 'Free malware scanner + firewall with real-time threat detection', url: 'https://wordpress.org/plugins/wordfence/' },
+      { name: 'MalCare Security', desc: 'One-click malware removal with deep file scanning', url: 'https://wordpress.org/plugins/malcare-security/' },
+      { name: 'Sucuri Security', desc: 'Cloud-based malware scanner and site firewall', url: 'https://wordpress.org/plugins/sucuri-scanner/' },
+    ],
+    links: [
+      { label: 'Google: WordPress malware removal guide', url: 'https://www.google.com/search?q=wordpress+malware+removal+guide+step+by+step' },
+      { label: 'Google: How to clean a hacked WordPress site', url: 'https://www.google.com/search?q=how+to+clean+hacked+wordpress+site' },
+    ],
+  },
+  'PHP Files in Uploads': {
+    summary: 'PHP files were found in the uploads directory. Only media files (images, PDFs) should exist there — PHP files may be backdoors left by attackers.',
+    steps: [
+      'Open cPanel File Manager or connect via FTP',
+      'Navigate to wp-content/uploads/ and search for any .php files',
+      'Delete all .php files found in the uploads folder',
+      'Add an .htaccess file to block PHP execution there (see code below)',
+    ],
+    code: `# Add this as wp-content/uploads/.htaccess\n<Files *.php>\n  deny from all\n</Files>`,
+    plugins: [
+      { name: 'WP Cerber Security', desc: 'Automatically blocks PHP execution in uploads', url: 'https://wordpress.org/plugins/wp-cerber/' },
+    ],
+    links: [
+      { label: 'Google: Block PHP execution in WordPress uploads', url: 'https://www.google.com/search?q=block+php+execution+wordpress+uploads+htaccess' },
+    ],
+  },
+  'WordPress Core Update Available': {
+    summary: 'A new version of WordPress is available. Keeping core updated protects against known security vulnerabilities.',
+    steps: [
+      'Go to WordPress Admin → Dashboard → Updates',
+      'Click "Update Now" for the WordPress core update',
+      'Take a backup first using WPvivid or UpdraftPlus',
+      'After updating, verify your site looks and works correctly',
+    ],
+    code: `// Optionally enable auto core updates in wp-config.php\ndefine('WP_AUTO_UPDATE_CORE', true);`,
+    links: [
+      { label: 'Google: How to safely update WordPress', url: 'https://www.google.com/search?q=how+to+update+wordpress+safely+without+breaking+site' },
+    ],
+  },
+  'File Editor Enabled': {
+    summary: 'The WordPress theme/plugin file editor is enabled. Any admin who logs in can edit PHP files directly from the browser — a critical risk if admin credentials are stolen.',
+    steps: [
+      'Open wp-config.php via FTP or cPanel File Manager',
+      'Add the line shown in the code box below',
+      'Save the file — the Editor option will disappear from WP Admin immediately',
+    ],
+    code: `// Add this to wp-config.php (before the "stop editing" line)\ndefine('DISALLOW_FILE_EDIT', true);`,
+    links: [
+      { label: 'Google: Disable WordPress file editor wp-config', url: 'https://www.google.com/search?q=disable+wordpress+file+editor+wp-config+DISALLOW_FILE_EDIT' },
+    ],
+  },
+  'Default Login Path': {
+    summary: 'Your site uses the default wp-login.php URL. Bots scan this path constantly to attempt brute-force attacks against admin accounts.',
+    steps: [
+      'Install WPS Hide Login to change the login URL to something custom',
+      'Enable login attempt limits to block repeated failed logins',
+      'Consider adding two-factor authentication (2FA) for admin accounts',
+      'After changing the URL, update it wherever you have it bookmarked',
+    ],
+    plugins: [
+      { name: 'WPS Hide Login', desc: 'Change wp-admin URL to any custom path you choose', url: 'https://wordpress.org/plugins/wps-hide-login/' },
+      { name: 'Limit Login Attempts Reloaded', desc: 'Automatically blocks IPs after repeated failed logins', url: 'https://wordpress.org/plugins/limit-login-attempts-reloaded/' },
+      { name: 'WP 2FA', desc: 'Adds two-factor authentication to admin logins', url: 'https://wordpress.org/plugins/wp-2fa/' },
+    ],
+    links: [
+      { label: 'Google: Change WordPress login URL security', url: 'https://www.google.com/search?q=change+wordpress+login+url+wps+hide+login+setup' },
+    ],
+  },
+  'SSL Not Enabled': {
+    summary: 'Your site is not served over HTTPS. All data (passwords, form data) is transmitted unencrypted. Google also penalises non-HTTPS sites in search rankings.',
+    steps: [
+      'In cPanel, go to SSL/TLS → Let\'s Encrypt SSL → Install a free certificate',
+      'In WordPress Admin → Settings → General, change both URLs from http:// to https://',
+      'Install Really Simple SSL to handle redirects and mixed content automatically',
+      'Test the site to make sure all resources (images, scripts) load over HTTPS',
+    ],
+    plugins: [
+      { name: 'Really Simple SSL', desc: 'One-click HTTP → HTTPS redirect, fixes mixed content', url: 'https://wordpress.org/plugins/really-simple-ssl/' },
+    ],
+    links: [
+      { label: 'Google: Install free SSL certificate on WordPress cPanel', url: 'https://www.google.com/search?q=install+free+ssl+certificate+wordpress+cpanel+lets+encrypt' },
+    ],
+  },
+  'Low Disk Space': {
+    summary: 'Server disk usage is above 90%. This can cause site crashes, failed email delivery, and database write errors.',
+    steps: [
+      'In cPanel, use Disk Usage tool to find which folders are largest',
+      'Remove old backups from wp-content/uploads/ if stored locally',
+      'Clean up database: remove spam comments, post revisions, and transients',
+      'Delete old server log files from cPanel → Error Logs',
+      'Switch backup storage to Google Drive or Dropbox to free local space',
+    ],
+    plugins: [
+      { name: 'WP-Optimize', desc: 'Clean database, remove revisions and spam in one click', url: 'https://wordpress.org/plugins/wp-optimize/' },
+      { name: 'WPvivid Backup', desc: 'Backup to cloud storage to avoid filling server disk', url: 'https://wordpress.org/plugins/wpvivid-backuprestore/' },
+    ],
+    links: [
+      { label: 'Google: Free up WordPress site disk space cPanel', url: 'https://www.google.com/search?q=free+up+wordpress+site+disk+space+cpanel' },
+    ],
+  },
+  'High Disk Usage': {
+    summary: 'Disk usage is above 80%. Start cleaning up now before the server runs out of space and causes errors.',
+    steps: [
+      'Use cPanel Disk Usage to identify large directories',
+      'Review and clean wp-content/uploads/ for unnecessarily large files',
+      'Run database optimization to remove post revisions and transients',
+    ],
+    plugins: [
+      { name: 'WP-Optimize', desc: 'Database cleaner, removes revisions and spam automatically', url: 'https://wordpress.org/plugins/wp-optimize/' },
+    ],
+    links: [
+      { label: 'Google: Reduce WordPress disk usage', url: 'https://www.google.com/search?q=reduce+wordpress+site+disk+usage+optimization' },
+    ],
+  },
+  'No Backup Plugin': {
+    summary: 'No backup plugin is active on this site. Without backups, a hack or server crash means permanent data loss with no recovery option.',
+    steps: [
+      'Install WPvivid Backup or UpdraftPlus from the WordPress plugin directory',
+      'After activation, go to the plugin settings and configure remote storage (Google Drive or Dropbox)',
+      'Create your first manual backup to verify it works',
+      'Set up an automatic weekly (or daily for active sites) backup schedule',
+    ],
+    plugins: [
+      { name: 'WPvivid Backup', desc: 'Free automated backups to Google Drive, Dropbox, and more', url: 'https://wordpress.org/plugins/wpvivid-backuprestore/' },
+      { name: 'UpdraftPlus', desc: 'Most popular backup plugin with cloud storage support', url: 'https://wordpress.org/plugins/updraftplus/' },
+      { name: 'BackWPup', desc: 'Scheduled backups to Dropbox, S3, FTP, or email', url: 'https://wordpress.org/plugins/backwpup/' },
+    ],
+    links: [
+      { label: 'Google: Best free WordPress backup plugin 2024', url: 'https://www.google.com/search?q=best+free+wordpress+backup+plugin+2024+google+drive' },
+    ],
+  },
+  'No Backups Found': {
+    summary: 'WPvivid is installed but no backups have been created. Your site has no recovery point if something goes wrong.',
+    steps: [
+      'Go to WordPress Admin → WPvivid Backup → Backup & Restore',
+      'Click "Backup Now" to create your first backup immediately',
+      'Verify the backup completes successfully and shows in the backup list',
+      'Set up an automatic schedule: weekly for low-traffic sites, daily for stores',
+      'Connect remote storage (Google Drive) so backups are saved off-server',
+    ],
+    plugins: [
+      { name: 'WPvivid Backup', desc: 'Already installed — go configure it now', url: 'https://wordpress.org/plugins/wpvivid-backuprestore/' },
+    ],
+    links: [
+      { label: 'Google: WPvivid backup setup guide', url: 'https://www.google.com/search?q=wpvivid+backup+setup+guide+google+drive' },
+    ],
+  },
+  'Multiple Failed Logins': {
+    summary: 'More than 10 failed login attempts were detected in the last 24 hours. Your site is being targeted by an automated brute-force attack.',
+    steps: [
+      'Install Limit Login Attempts Reloaded immediately to start blocking offending IPs',
+      'Change your admin password to a strong, unique password (16+ characters)',
+      'Install WPS Hide Login to change the login URL so bots can\'t find it',
+      'Enable 2FA for all admin accounts',
+      'In WP Admin → Users, check for any unknown admin accounts and delete them',
+    ],
+    plugins: [
+      { name: 'Limit Login Attempts Reloaded', desc: 'Locks out IPs automatically after failed attempts', url: 'https://wordpress.org/plugins/limit-login-attempts-reloaded/' },
+      { name: 'WPS Hide Login', desc: 'Hides wp-login.php from automated scanners', url: 'https://wordpress.org/plugins/wps-hide-login/' },
+      { name: 'Wordfence Security', desc: 'Real-time IP blocking firewall + login security', url: 'https://wordpress.org/plugins/wordfence/' },
+    ],
+    links: [
+      { label: 'Google: Stop WordPress brute force attack', url: 'https://www.google.com/search?q=stop+wordpress+brute+force+attack+limit+login+attempts' },
+    ],
+  },
+  'Site is Down': {
+    summary: 'The site is not responding to HTTP requests. This could be a server outage, a crashed PHP process, a full disk, or a misconfigured plugin.',
+    steps: [
+      'Open the site URL in your browser to confirm it is unreachable',
+      'Log into cPanel and check if the web server (Apache/LiteSpeed) is running',
+      'Go to cPanel → Error Logs and look for recent errors',
+      'Check if disk space is full (cPanel → Disk Usage)',
+      'Try deactivating recently installed/updated plugins via FTP if site is on white screen',
+      'Contact your hosting provider if server-level access is needed',
+    ],
+    links: [
+      { label: 'Google: WordPress site down troubleshooting guide', url: 'https://www.google.com/search?q=wordpress+site+down+white+screen+of+death+fix' },
+      { label: 'Google: Check cPanel error logs website down', url: 'https://www.google.com/search?q=cpanel+error+logs+website+down+troubleshoot' },
+    ],
+  },
+};
+
+function getSolution(alert) {
+  if (SOLUTIONS[alert.name]) return SOLUTIONS[alert.name];
+  if (alert.name.startsWith('Plugin Update:')) {
+    const pluginName = alert.name.replace('Plugin Update: ', '');
+    return {
+      summary: `A new version of the plugin "${pluginName}" is available. Plugin updates often include security patches — update promptly.`,
+      steps: [
+        'Go to WordPress Admin → Dashboard → Updates',
+        `Find "${pluginName}" in the plugins list`,
+        'Check the changelog for security-related fixes before updating',
+        'Click "Update" to install the latest version',
+        'If the site breaks after updating, deactivate the plugin and contact the plugin author',
+      ],
+      links: [
+        { label: `Google: "${pluginName}" plugin update safe?`, url: `https://www.google.com/search?q=${encodeURIComponent(pluginName)}+wordpress+plugin+update+safe+changelog` },
+        { label: 'Google: How to update WordPress plugins safely', url: 'https://www.google.com/search?q=how+to+safely+update+wordpress+plugins' },
+      ],
+    };
+  }
+  if (alert.name.startsWith('Theme Update:')) {
+    const themeName = alert.name.replace('Theme Update: ', '');
+    return {
+      summary: `A new version of the theme "${themeName}" is available. Keeping themes updated prevents known security vulnerabilities.`,
+      steps: [
+        'Go to WordPress Admin → Dashboard → Updates',
+        `Find "${themeName}" in the themes list`,
+        'If you have custom code in the theme files, back them up first — or use a child theme',
+        'Click "Update" to install the latest version',
+      ],
+      links: [
+        { label: `Google: "${themeName}" theme update WordPress`, url: `https://www.google.com/search?q=${encodeURIComponent(themeName)}+wordpress+theme+update` },
+      ],
+    };
+  }
+  return {
+    summary: `No specific fix guide is available for "${alert.name}" yet. Apply general WordPress security best practices while we add a detailed guide.`,
+    steps: [
+      'Keep WordPress core, all plugins, and themes up to date',
+      'Use a security plugin like Wordfence or Sucuri for active monitoring',
+      'Ensure all admin accounts have strong, unique passwords',
+      'Take a full backup before making any changes to the site',
+    ],
+    plugins: [
+      { name: 'Wordfence Security', desc: 'Free firewall, malware scanner, and security hardening', url: 'https://wordpress.org/plugins/wordfence/' },
+    ],
+    links: [
+      { label: `Google: "${alert.name}" WordPress security fix`, url: `https://www.google.com/search?q=${encodeURIComponent(alert.name)}+wordpress+security+fix` },
+      { label: 'Google: WordPress security hardening checklist', url: 'https://www.google.com/search?q=wordpress+security+hardening+checklist+2024' },
+    ],
+  };
+}
+
+function AlertSolutionModal({ alert, onClose }) {
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  const sol = getSolution(alert);
+  const icon = TYPE_ICONS[alert.type] || TYPE_ICONS.Server;
+
+  return (
+    <div className="sol-overlay" onClick={onClose}>
+      <div className="sol-panel" onClick={e => e.stopPropagation()}>
+        <div className="sol-header">
+          <div className="sol-header-left">
+            <div className={`sol-icon ${icon.cls}`}>
+              <svg viewBox="0 0 24 24">{icon.d}</svg>
+            </div>
+            <div>
+              <div className="sol-title">{alert.name}</div>
+              <div className="sol-meta">
+                <span className={`sev ${alert.sevCls}`}>{alert.sevLabel}</span>
+                <span className="sol-site">{alert.site}</span>
+              </div>
+            </div>
+          </div>
+          <button className="sol-close" onClick={onClose} aria-label="Close">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div className="sol-body">
+          <div className="sol-summary">{sol.summary}</div>
+
+          {sol.steps && sol.steps.length > 0 && (
+            <div className="sol-section">
+              <div className="sol-section-title">
+                <svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                How to Fix
+              </div>
+              <ol className="sol-steps">
+                {sol.steps.map((s, i) => <li key={i}>{s}</li>)}
+              </ol>
+            </div>
+          )}
+
+          {sol.code && (
+            <div className="sol-section">
+              <div className="sol-section-title">
+                <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                Code
+              </div>
+              <pre className="sol-code">{sol.code}</pre>
+            </div>
+          )}
+
+          {sol.plugins && sol.plugins.length > 0 && (
+            <div className="sol-section">
+              <div className="sol-section-title">
+                <svg viewBox="0 0 24 24"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg>
+                Recommended Plugins
+              </div>
+              <div className="sol-plugins">
+                {sol.plugins.map((p, i) => (
+                  <a key={i} className="sol-plugin-card" href={p.url} target="_blank" rel="noopener noreferrer">
+                    <div className="sol-plugin-name">{p.name}</div>
+                    <div className="sol-plugin-desc">{p.desc}</div>
+                    <span className="sol-plugin-link">View on WordPress.org →</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sol.links && sol.links.length > 0 && (
+            <div className="sol-section">
+              <div className="sol-section-title">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Search & Learn More
+              </div>
+              <div className="sol-links">
+                {sol.links.map((l, i) => (
+                  <a key={i} className="sol-link" href={l.url} target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    {l.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Alerts() {
   const { setPageClass } = usePage();
   useEffect(() => { setPageClass('page-alerts'); return () => setPageClass(''); }, [setPageClass]);
@@ -31,6 +377,8 @@ export default function Alerts() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+
+  const [selectedAlert, setSelectedAlert] = useState(null);
 
   const [tab, setTab] = useState('all');
   const [search, setSearch] = useState('');
@@ -173,7 +521,7 @@ export default function Alerts() {
                   const [fd, ft] = fmtDateParts(a.first);
                   const [ld, lt] = fmtDateParts(a.last);
                   return (
-                    <tr key={a.id}>
+                    <tr key={a.id} className="alert-row" onClick={() => setSelectedAlert(a)}>
                       <td>
                         <div className="alert-cell">
                           <div className={`alert-circle ${icon.cls}`}><svg viewBox="0 0 24 24">{icon.d}</svg></div>
@@ -240,6 +588,8 @@ export default function Alerts() {
           </div>
         </div>
       </div>
+
+      {selectedAlert && <AlertSolutionModal alert={selectedAlert} onClose={() => setSelectedAlert(null)} />}
 
       <div className="qa-panel">
         <div className="panel-title">Quick Actions</div>
