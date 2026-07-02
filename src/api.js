@@ -24,6 +24,7 @@ export const api = {
   addSite:     (payload)          => request('/api/sites', { method: 'POST', body: JSON.stringify(payload) }),
   deleteSite:  (id)               => request(`/api/sites/${id}`, { method: 'DELETE' }),
   syncSite:    (id)               => request(`/api/sites/${id}/sync`, { method: 'POST' }),
+  syncStatus:  (id)               => request(`/api/sites/${id}/sync/status`),
   latestSnap:  (id)               => request(`/api/sites/${id}/latest`),
   siteHistory: (id, days = 7)    => request(`/api/sites/${id}/history?days=${days}`),
   listAlerts:  ()                 => request('/api/alerts'),

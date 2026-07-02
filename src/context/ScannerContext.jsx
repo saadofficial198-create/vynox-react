@@ -46,15 +46,38 @@ export function ScannerProvider({ children }) {
     try {
       const res   = await api.listSites();
       const sites = res.sites || [];
+      if (sites.length === 0) return;
 
       setProgress({ done: 0, total: sites.length, current: '' });
 
-      /* Scan one by one so progress is visible */
-      for (let i = 0; i < sites.length; i++) {
-        const site = sites[i];
-        setProgress({ done: i, total: sites.length, current: site.name || site.url });
-        try { await api.syncSite(site._id); } catch { /* site might be offline */ }
-        setProgress({ done: i + 1, total: sites.length, current: site.name || site.url });
+      // Fire all syncs at once — backend handles each independently.
+      // Safe to refresh the page: backend continues running regardless.
+      await Promise.all(sites.map(s => api.syncSite(s._id).catch(() => {})));
+
+      // Poll all sites until each reports done or error
+      const pending = new Set(sites.map(s => String(s._id)));
+      let done = 0;
+
+      while (pending.size > 0) {
+        await new Promise(r => setTimeout(r, 2500));
+        const checks = await Promise.allSettled(
+          [...pending].map(id => api.syncStatus(id).then(r => ({ id, status: r.status })))
+        );
+        for (const c of checks) {
+          if (c.status === 'fulfilled') {
+            const { id, status } = c.value;
+            if (status === 'done' || status === 'error') {
+              pending.delete(id);
+              done++;
+              setProgress({ done, total: sites.length, current: '' });
+            }
+          } else {
+            // Network error on status check — count it as done so we don't loop forever
+            pending.delete(c.reason?.id);
+            done++;
+            setProgress({ done, total: sites.length, current: '' });
+          }
+        }
       }
 
       const now = Date.now();

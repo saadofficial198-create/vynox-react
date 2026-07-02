@@ -328,8 +328,16 @@ export default function Sites() {
 
   async function handleSync(id) {
     setSyncingId(id);
-    try { await api.syncSite(id); await loadSites(); }
-    catch (e) { alert('Sync failed: ' + e.message); }
+    try {
+      await api.syncSite(id); // returns immediately — sync runs in background
+      // Poll until the backend reports done or error
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 2500));
+        const s = await api.syncStatus(id);
+        if (s.status === 'done' || s.status === 'error') break;
+      }
+      await loadSites();
+    } catch (e) { alert('Sync failed: ' + e.message); }
     finally { setSyncingId(null); }
   }
   async function handleDelete(id, name) {
