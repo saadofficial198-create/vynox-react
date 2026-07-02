@@ -1,4 +1,73 @@
 import { useScanner } from '../context/ScannerContext';
+import { useState, useEffect, useRef } from 'react';
+import { api } from '../api';
+
+const PING_INTERVAL = 5 * 60; // 5 minutes in seconds
+
+function UptimeCountdown() {
+  const [remaining, setRemaining] = useState(() => {
+    const lastAt = parseInt(localStorage.getItem('vynox_last_ping_at') || '0', 10);
+    if (!lastAt) { localStorage.setItem('vynox_last_ping_at', String(Date.now())); return PING_INTERVAL; }
+    const elapsed = Math.floor((Date.now() - lastAt) / 1000);
+    const left = PING_INTERVAL - (elapsed % PING_INTERVAL);
+    return left > 0 ? left : PING_INTERVAL;
+  });
+  const [onlineCount, setOnlineCount] = useState(null);
+  const [totalCount,  setTotalCount]  = useState(null);
+  const [flash, setFlash] = useState(false);
+
+  const fetchCounts = async () => {
+    try {
+      const r = await api.listSites();
+      const sites = r.sites || [];
+      setTotalCount(sites.length);
+      setOnlineCount(sites.filter(s => s.status === 'online').length);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => { fetchCounts(); }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRemaining(prev => {
+        if (prev <= 1) {
+          localStorage.setItem('vynox_last_ping_at', String(Date.now()));
+          fetchCounts();
+          setFlash(true);
+          setTimeout(() => setFlash(false), 800);
+          return PING_INTERVAL;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const circ   = 2 * Math.PI * 10;
+  const offset = circ * (1 - remaining / PING_INTERVAL);
+  const mins   = String(Math.floor(remaining / 60)).padStart(2, '0');
+  const secs   = String(remaining % 60).padStart(2, '0');
+
+  return (
+    <div className={`uptime-pill${flash ? ' up-flash' : ''}`} title="Uptime monitor — checks every 5 minutes">
+      <svg className="cd-ring-svg" width="26" height="26" viewBox="0 0 28 28">
+        <circle cx="14" cy="14" r="10" className="cd-track" />
+        <circle cx="14" cy="14" r="10" className="up-ring-progress"
+          style={{ strokeDasharray: circ, strokeDashoffset: offset }} />
+      </svg>
+      <div className="cd-text">
+        <span className="cd-label">Uptime</span>
+        <span className="cd-val">{mins}:{secs}</span>
+      </div>
+      {totalCount !== null && (
+        <div className="up-count">
+          <span className="up-dot" />
+          <span className="up-num">{onlineCount}/{totalCount}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function fmtTime(s) {
   if (s >= 3600) {
@@ -107,6 +176,7 @@ export default function Topbar({ meta = {}, onSearch }) {
       )}
 
       <div className="topbar-actions">
+        <UptimeCountdown />
         <ScanCountdown />
         <ScanAllBtn />
         <button className="topbar-btn" aria-label="Notifications">
