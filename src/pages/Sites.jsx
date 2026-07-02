@@ -285,8 +285,12 @@ export default function Sites() {
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [syncingId,  setSyncingId]  = useState(null);
-  const [syncError,  setSyncError]  = useState({}); // { siteId: errorMsg }
+  const [syncingIds, setSyncingIds] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('vynox_syncing') || '[]')); }
+    catch { return new Set(); }
+  });
+  const [syncError,  setSyncError]  = useState({});
+  const loadSitesRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
   const [snap, setSnap] = useState(null);
   const [snapLoading, setSnapLoading] = useState(false);
@@ -300,8 +304,59 @@ export default function Sites() {
       if ((r.sites || []).length && !selectedId) setSelectedId(r.sites[0]._id);
     } catch (e) { setLoadError(e.message); } finally { setLoading(false); }
   }, [selectedId]);
+  loadSitesRef.current = loadSites;
+
+  // Persist syncing IDs to localStorage + update state
+  const markSyncing = useCallback((id) => {
+    setSyncingIds(prev => {
+      const next = new Set(prev); next.add(id);
+      localStorage.setItem('vynox_syncing', JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+  const unmarkSyncing = useCallback((id) => {
+    setSyncingIds(prev => {
+      const next = new Set(prev); next.delete(id);
+      localStorage.setItem('vynox_syncing', JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  // Poll a single site until the backend reports done/error/idle (max 3 min)
+  const pollUntilDone = useCallback(async (id) => {
+    const deadline = Date.now() + 3 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2500));
+      try {
+        const s = await api.syncStatus(id);
+        if (s.status !== 'running') return;
+      } catch { return; } // old backend — just stop
+    }
+  }, []);
 
   useEffect(() => { loadSites(); }, [loadSites]);
+
+  /* Resume polling for any syncs that were running before page refresh */
+  useEffect(() => {
+    const stored = (() => {
+      try { return JSON.parse(localStorage.getItem('vynox_syncing') || '[]'); }
+      catch { return []; }
+    })();
+    stored.forEach(id => {
+      api.syncStatus(id)
+        .then(s => {
+          if (s.status === 'running') {
+            pollUntilDone(id).then(() => {
+              unmarkSyncing(id);
+              loadSitesRef.current?.();
+            });
+          } else {
+            unmarkSyncing(id);
+          }
+        })
+        .catch(() => unmarkSyncing(id));
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Auto-refresh when Scan All completes — no re-render every second */
   useEffect(() => {
@@ -328,22 +383,16 @@ export default function Sites() {
   }, [menu]);
 
   async function handleSync(id) {
-    setSyncingId(id);
+    if (syncingIds.has(id)) return; // already syncing this site
+    markSyncing(id);
     setSyncError(prev => ({ ...prev, [id]: null }));
     try {
-      await api.syncSite(id); // new backend returns immediately; old backend blocks then 502s
-      // Poll for completion — gracefully skips if /sync/status doesn't exist yet (old backend)
-      for (let i = 0; i < 60; i++) {
-        await new Promise(r => setTimeout(r, 2500));
-        try {
-          const s = await api.syncStatus(id);
-          if (s.status === 'done' || s.status === 'error' || s.status === 'idle') break;
-        } catch { break; } // status endpoint not available — just reload
-      }
+      await api.syncSite(id);    // returns immediately on new backend
+      await pollUntilDone(id);   // waits until backend reports done
       await loadSites();
     } catch (e) {
       setSyncError(prev => ({ ...prev, [id]: e.message }));
-    } finally { setSyncingId(null); }
+    } finally { unmarkSyncing(id); }
   }
   async function handleDelete(id, name) {
     if (!confirm(`Delete "${name}"? This removes the site and all its snapshots.`)) return;
@@ -452,7 +501,7 @@ export default function Sites() {
                             <button title="Preview" onClick={() => setSelectedId(s.id)} style={{ background: isSel ? '#5b46f5' : 'rgba(91,70,245,0.15)', border: 'none', color: isSel ? '#fff' : '#5b46f5', width: 28, height: 28, borderRadius: 5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                             </button>
-                            <button className="scan-btn" title={syncError[s.id] || undefined} onClick={() => handleSync(s.id)} disabled={syncingId === s.id} style={syncError[s.id] ? { borderColor: '#ef4444', color: '#ef4444' } : undefined}>{syncingId === s.id ? '…' : syncError[s.id] ? '!' : 'Sync'}</button>
+                            <button className="scan-btn" title={syncError[s.id] || undefined} onClick={() => handleSync(s.id)} disabled={syncingIds.has(s.id)} style={syncError[s.id] ? { borderColor: '#ef4444', color: '#ef4444' } : undefined}>{syncingIds.has(s.id) ? '…' : syncError[s.id] ? '!' : 'Sync'}</button>
                             <button className="action-dot-btn" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ id: s.id, x: r.right - 140, y: r.bottom + 4 }); }}>
                               <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg>
                             </button>
