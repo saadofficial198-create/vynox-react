@@ -450,6 +450,27 @@ export default function Sites() {
           <div className="panel">
             <div className="sites-panel-header"><div className="sites-panel-title">All Sites</div></div>
 
+            {syncingIds.size > 0 && (
+              <div className="sync-banner">
+                <span className="sync-banner-spinner" />
+                <span className="sync-banner-text">
+                  {syncingIds.size === 1
+                    ? `Syncing ${sites.find(s => syncingIds.has(s._id))?.name || '1 site'}…`
+                    : `Syncing ${syncingIds.size} sites in parallel…`}
+                </span>
+                <div className="sync-banner-dots">
+                  {[...syncingIds].map(id => {
+                    const site = sites.find(s => s._id === id);
+                    return site ? (
+                      <span key={id} className="sync-banner-dot" title={site.name}>
+                        {(site.name || site.url || '?').charAt(0).toUpperCase()}
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="sites-toolbar">
               <div className="search-box">
                 <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -501,7 +522,9 @@ export default function Sites() {
                             <button title="Preview" onClick={() => setSelectedId(s.id)} style={{ background: isSel ? '#5b46f5' : 'rgba(91,70,245,0.15)', border: 'none', color: isSel ? '#fff' : '#5b46f5', width: 28, height: 28, borderRadius: 5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                             </button>
-                            <button className="scan-btn" title={syncError[s.id] || undefined} onClick={() => handleSync(s.id)} disabled={syncingIds.has(s.id)} style={syncError[s.id] ? { borderColor: '#ef4444', color: '#ef4444' } : undefined}>{syncingIds.has(s.id) ? '…' : syncError[s.id] ? '!' : 'Sync'}</button>
+                            <button className={`scan-btn${syncingIds.has(s.id) ? ' scan-btn-syncing' : ''}`} title={syncError[s.id] || undefined} onClick={() => handleSync(s.id)} disabled={syncingIds.has(s.id)} style={syncError[s.id] ? { borderColor: '#ef4444', color: '#ef4444' } : undefined}>
+                              {syncingIds.has(s.id) ? <><span className="scan-btn-spin" /><span>Syncing</span></> : syncError[s.id] ? '!' : 'Sync'}
+                            </button>
                             <button className="action-dot-btn" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ id: s.id, x: r.right - 140, y: r.bottom + 4 }); }}>
                               <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg>
                             </button>
