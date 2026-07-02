@@ -139,7 +139,7 @@ export default function Dashboard() {
                       <td>
                         <div className="site-cell">
                           <div className="wp-logo">W</div>
-                          <div><div className="site-name">{s.name}</div><div className="site-sub">{s.url.replace(/^https?:\/\//, '')}</div></div>
+                          <div><div className="site-name">{s.name}</div><div className="site-sub">{(s.url || '').replace(/^https?:\/\//, '')}</div></div>
                         </div>
                       </td>
                       <td><div className={`score-ring ${scoreCls(score)}`}>{score != null ? `${score}%` : '—'}</div></td>

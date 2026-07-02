@@ -467,7 +467,7 @@ export default function Sites() {
                         <span className="sdp-name">{selected.name}</span>
                         <span className={selected.status === 'online' ? 'sdp-online' : 'sdp-offline'}><span className="sdp-online-dot" />{selected.status === 'online' ? 'Online' : 'Offline'}</span>
                       </div>
-                      <div className="sdp-sub">{selected.url.replace(/^https?:\/\//, '')}</div>
+                      <div className="sdp-sub">{(selected.url || '').replace(/^https?:\/\//, '')}</div>
                       <a className="sdp-link" href={selected.url} target="_blank" rel="noopener noreferrer">
                         {selected.url}
                         <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
