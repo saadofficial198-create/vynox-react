@@ -78,7 +78,18 @@ function DetailRing({ score, color }) {
 
 function OverviewTab({ site, snap }) {
   const [period, setPeriod] = useState('Last 7 Days');
+  const [history, setHistory] = useState([]);
   const d = snap?.data || {};
+
+  const periodDays = period === 'Last 30 Days' ? 30 : period === 'Last 90 Days' ? 90 : 7;
+
+  useEffect(() => {
+    if (!site?._id) return;
+    api.siteHistory(site._id, periodDays)
+      .then(r => setHistory(r.points || []))
+      .catch(() => setHistory([]));
+  }, [site?._id, periodDays]);
+
   return (
     <div className="sdp-tab-content active">
       <div className="info-grid">
@@ -102,19 +113,18 @@ function OverviewTab({ site, snap }) {
         </div>
         <div className="sdp-chart-wrap">
           <ChartCanvas config={(ctx) => {
-            const grad = ctx.createLinearGradient(0, 0, 0, 110);
             const c = scoreColor(site?.latest?.score);
-            grad.addColorStop(0, c.replace(')', ', 0.30)').replace('rgb', 'rgba').replace('#', '#'));
-            grad.addColorStop(1, 'rgba(255,255,255,0)');
-            const score = site?.latest?.score ?? 0;
+            const pts = history.length > 0 ? history : (site?.latest?.score != null ? [{ date: new Date().toISOString(), score: site.latest.score }] : []);
+            const labels = pts.map(p => new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            const data   = pts.map(p => p.score);
             return {
               type: 'line',
-              data: { labels: ['','','','','','',''], datasets: [{ data: [score, score, score, score, score, score, score], borderColor: c, backgroundColor: 'rgba(91,70,245,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: c }] },
-              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480' } }, y: { min: 0, max: 100, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', callback: v => v + '%', stepSize: 25 } } } },
+              data: { labels, datasets: [{ data, borderColor: c, backgroundColor: 'rgba(91,70,245,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: c }] },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', maxTicksLimit: 7 } }, y: { min: 0, max: 100, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', callback: v => v + '%', stepSize: 25 } } } },
             };
-          }} />
+          }} deps={[history]} />
         </div>
-        <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — currently showing latest score</div>
+        {history.length <= 1 && <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — sync again to build history</div>}
       </div>
     </div>
   );

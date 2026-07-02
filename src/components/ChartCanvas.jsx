@@ -6,7 +6,7 @@ import Chart from 'chart.js/auto';
  * `config` may be an object, or a function (ctx) => config so charts can
  * build canvas gradients. Rebuilds when config reference changes.
  */
-export default function ChartCanvas({ config, width, height, className, style }) {
+export default function ChartCanvas({ config, deps = [], width, height, className, style }) {
   const ref = useRef(null);
   const chartRef = useRef(null);
 
@@ -24,7 +24,7 @@ export default function ChartCanvas({ config, width, height, className, style })
         chartRef.current = null;
       }
     };
-  }, [config]);
+  }, [config, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <canvas ref={ref} width={width} height={height} className={className} style={style} />;
 }
