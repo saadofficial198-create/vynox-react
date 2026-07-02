@@ -13,14 +13,17 @@ const ScannerContext = createContext(null);
 
 export function ScannerProvider({ children }) {
   const [intervalKey, setIntervalKey] = useState(
-    () => localStorage.getItem('vynox_scan_interval') || 'Every 1 Hour'
+    () => localStorage.getItem('vynox_scan_interval') || 'Every 15 Minutes'
   );
-  const totalSecs = SCAN_INTERVALS[intervalKey] ?? 3600;
+  const totalSecs = SCAN_INTERVALS[intervalKey] ?? 900;
 
   const [remaining,  setRemaining]  = useState(() => {
     if (totalSecs === 0) return 0;
-    const lastAt = parseInt(localStorage.getItem('vynox_last_scan_at') || '0', 10);
-    if (!lastAt) return totalSecs;
+    let lastAt = parseInt(localStorage.getItem('vynox_last_scan_at') || '0', 10);
+    if (!lastAt) {
+      lastAt = Date.now();
+      localStorage.setItem('vynox_last_scan_at', String(lastAt));
+    }
     const elapsed = Math.floor((Date.now() - lastAt) / 1000);
     const left = totalSecs - (elapsed % totalSecs);
     return left > 0 ? left : totalSecs;
@@ -74,7 +77,12 @@ export function ScannerProvider({ children }) {
   useEffect(() => {
     if (totalSecs === 0) { setRemaining(0); return; }
     const lastAt = parseInt(localStorage.getItem('vynox_last_scan_at') || '0', 10);
-    if (!lastAt) { setRemaining(totalSecs); return; }
+    if (!lastAt) {
+      const now = Date.now();
+      localStorage.setItem('vynox_last_scan_at', String(now));
+      setRemaining(totalSecs);
+      return;
+    }
     const elapsed = Math.floor((Date.now() - lastAt) / 1000);
     const left = totalSecs - (elapsed % totalSecs);
     setRemaining(left > 0 ? left : totalSecs);
