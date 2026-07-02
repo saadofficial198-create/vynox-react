@@ -54,31 +54,37 @@ export function ScannerProvider({ children }) {
       // Safe to refresh the page: backend continues running regardless.
       await Promise.all(sites.map(s => api.syncSite(s._id).catch(() => {})));
 
-      // Poll all sites until each reports done or error
+      // Poll all sites until each reports done/error/idle.
+      // Max 3 minutes total; if /sync/status doesn't exist (old backend) we exit immediately.
       const pending = new Set(sites.map(s => String(s._id)));
       let done = 0;
+      const deadline = Date.now() + 3 * 60 * 1000;
+      let statusUnavailable = false;
 
-      while (pending.size > 0) {
+      while (pending.size > 0 && Date.now() < deadline && !statusUnavailable) {
         await new Promise(r => setTimeout(r, 2500));
+        const ids = [...pending];
         const checks = await Promise.allSettled(
-          [...pending].map(id => api.syncStatus(id).then(r => ({ id, status: r.status })))
+          ids.map(id => api.syncStatus(id).then(r => ({ id, status: r.status })))
         );
+        let allFailed = true;
         for (const c of checks) {
           if (c.status === 'fulfilled') {
+            allFailed = false;
             const { id, status } = c.value;
-            if (status === 'done' || status === 'error') {
+            if (status !== 'running') { // done | error | idle
               pending.delete(id);
               done++;
               setProgress({ done, total: sites.length, current: '' });
             }
-          } else {
-            // Network error on status check — count it as done so we don't loop forever
-            pending.delete(c.reason?.id);
-            done++;
-            setProgress({ done, total: sites.length, current: '' });
           }
         }
+        // If every status check failed (endpoint not found / old backend), stop polling
+        if (allFailed) statusUnavailable = true;
       }
+
+      // Mark remaining as done if we hit deadline or old backend
+      if (pending.size > 0) setProgress({ done: sites.length, total: sites.length, current: '' });
 
       const now = Date.now();
       localStorage.setItem('vynox_last_scan_at', String(now));
