@@ -278,6 +278,7 @@ export default function Sites() {
 
 
 
+  const [search, setSearch] = useState('');
   const [status, setStatus] = useState('All Status');
   const [tags, setTags] = useState('All Tags');
   const [tab, setTab] = useState('overview');
@@ -408,6 +409,8 @@ export default function Sites() {
   const filteredRows = rows.filter(r => {
     if (status === 'Online'  && !r.online) return false;
     if (status === 'Offline' && r.online)  return false;
+    const q = search.trim().toLowerCase();
+    if (q && !`${r.name} ${r.sub}`.toLowerCase().includes(q)) return false;
     return true;
   });
 
@@ -474,7 +477,7 @@ export default function Sites() {
             <div className="sites-toolbar">
               <div className="search-box">
                 <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" placeholder="Search sites..." />
+                <input type="text" placeholder="Search sites..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
               <CustomSelect value={status} onChange={setStatus} options={['All Status', 'Online', 'Offline']} />
               <CustomSelect value={tags} onChange={setTags} options={['All Tags', 'Main Site', 'E-commerce']} />
