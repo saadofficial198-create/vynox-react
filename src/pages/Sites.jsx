@@ -270,7 +270,220 @@ function UpdatesTab({ snap }) {
   );
 }
 
-const TAB_BODIES = { overview: OverviewTab, details: DetailsTab, alerts: AlertsTab, scans: ScansTab, backups: BackupsTab, updates: UpdatesTab };
+/* ============ PERFORMANCE TAB — real Google PageSpeed score per page ============ */
+
+function metricColor(val, [good, ok]) {
+  // Lower-is-better metrics (ms / CLS points) — good <= threshold1, ok <= threshold2, else poor
+  if (val == null) return '#5a6480';
+  if (val <= good) return '#22c55e';
+  if (val <= ok) return '#f59e0b';
+  return '#ef4444';
+}
+function fmtMs(ms) {
+  if (ms == null) return '—';
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`;
+}
+function fmtCls(v) {
+  if (v == null) return '—';
+  return v.toFixed(3);
+}
+
+function PageSpeedCard({ pageLabel, pagePath, latest }) {
+  const ok = latest?.ok;
+  const scores = latest?.scores || {};
+  const vitals = latest?.vitals || {};
+  return (
+    <div className="sdp-list-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 10, padding: '14px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+        <div>
+          <div className="sdp-list-name">{pageLabel}</div>
+          <div style={{ fontSize: 10, color: '#5a6480', marginTop: 1 }}>{pagePath}</div>
+        </div>
+        {!latest && <span style={{ fontSize: 11, color: '#5a6480' }}>Not checked yet</span>}
+        {latest && !ok && <span className="sev sev-high">Failed: {latest.error || 'unknown error'}</span>}
+        {latest && ok && (
+          <div style={{ fontSize: 10, color: '#5a6480', textAlign: 'right' }}>
+            Checked {relTime(latest.checkedAt)}
+          </div>
+        )}
+      </div>
+
+      {latest && ok && (
+        <>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+            <ScoreStat label="Performance" val={scores.performance} />
+            <ScoreStat label="SEO" val={scores.seo} />
+            <ScoreStat label="Accessibility" val={scores.accessibility} />
+            <ScoreStat label="Best Practices" val={scores.bestPractices} />
+          </div>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', borderTop: '1px solid #141b27', paddingTop: 10, width: '100%' }}>
+            <VitalStat label="LCP" val={fmtMs(vitals.lcpMs)} color={metricColor(vitals.lcpMs, [2500, 4000])} title="Largest Contentful Paint" />
+            <VitalStat label="CLS" val={fmtCls(vitals.clsScore)} color={metricColor(vitals.clsScore, [0.1, 0.25])} title="Cumulative Layout Shift" />
+            <VitalStat label="FCP" val={fmtMs(vitals.fcpMs)} color={metricColor(vitals.fcpMs, [1800, 3000])} title="First Contentful Paint" />
+            <VitalStat label="TTFB" val={fmtMs(vitals.ttfbMs)} color={metricColor(vitals.ttfbMs, [800, 1800])} title="Time to First Byte" />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+function ScoreStat({ label, val }) {
+  const color = val == null ? '#5a6480' : val >= 90 ? '#22c55e' : val >= 50 ? '#f59e0b' : '#ef4444';
+  return (
+    <div style={{ textAlign: 'center', minWidth: 64 }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{val ?? '—'}</div>
+      <div style={{ fontSize: 10, color: '#7a839e', marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+function VitalStat({ label, val, color, title }) {
+  return (
+    <div style={{ minWidth: 70 }} title={title}>
+      <div style={{ fontSize: 13, fontWeight: 600, color }}>{val}</div>
+      <div style={{ fontSize: 10, color: '#7a839e', marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+function PerformanceTab({ site }) {
+  const [pages, setPages] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(() => {
+    if (!site?._id) return;
+    setLoading(true);
+    api.pageSpeedLatest(site._id)
+      .then(r => setPages(r.pages || []))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [site?._id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function runCheck() {
+    setChecking(true); setError(null);
+    try {
+      await api.pageSpeedCheck(site._id);
+      load();
+    } catch (e) { setError(e.message); }
+    finally { setChecking(false); }
+  }
+
+  return (
+    <div className="sdp-tab-content active">
+      <div className="sdp-block-head">
+        <div className="sdp-block-title">Real Performance Score (Google PageSpeed)</div>
+        <button onClick={runCheck} disabled={checking} style={{ background: '#5b46f5', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: 5, fontSize: 11, cursor: checking ? 'default' : 'pointer', opacity: checking ? 0.6 : 1 }}>
+          {checking ? 'Checking…' : 'Check Now'}
+        </button>
+      </div>
+      {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
+      {!loading && error && <div style={{ padding: 16, color: '#fca5a5', fontSize: 13 }}>{error}</div>}
+      {!loading && !error && (!pages || pages.length === 0) && (
+        <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No pages configured. Add monitored pages first.</div>
+      )}
+      {!loading && pages && pages.length > 0 && (
+        <div className="sdp-list">
+          {pages.map(p => (
+            <PageSpeedCard key={p.pageLabel} pageLabel={p.pageLabel} pagePath={p.pagePath} latest={p.latest} />
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: '#5a6480', marginTop: 10 }}>
+        Scores refresh automatically every 6 hours. Mobile strategy, powered by Google PageSpeed Insights.
+      </div>
+    </div>
+  );
+}
+
+/* ============ SCREENSHOTS TAB — 3x/day visual capture per page ============ */
+
+function ScreenshotCard({ pageLabel, pagePath, latest }) {
+  const [showHistory, setShowHistory] = useState(false);
+  return (
+    <div style={{ background: '#0a1628', border: '1px solid #1e2535', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid #1e2535' }}>
+        <div>
+          <div className="sdp-list-name">{pageLabel}</div>
+          <div style={{ fontSize: 10, color: '#5a6480' }}>{pagePath}</div>
+        </div>
+        {latest?.diffFlagged && <span className="sev sev-high">Possible UI change</span>}
+        {latest?.ok === false && <span className="sev sev-high">Capture failed</span>}
+      </div>
+      {latest?.ok && latest?.publicUrl && (
+        <a href={latest.publicUrl} target="_blank" rel="noopener noreferrer">
+          <img src={latest.publicUrl} alt={pageLabel} style={{ width: '100%', display: 'block', maxHeight: 220, objectFit: 'cover', objectPosition: 'top' }} />
+        </a>
+      )}
+      {(!latest || (!latest.ok)) && (
+        <div style={{ padding: 24, textAlign: 'center', color: '#5a6480', fontSize: 12 }}>
+          {latest?.error || 'No screenshot yet'}
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: 10, color: '#5a6480' }}>
+        <span>{latest ? `Captured ${relTime(latest.capturedAt)}` : ''}</span>
+        {latest?.diffPct != null && <span>Diff: {latest.diffPct.toFixed(1)}%</span>}
+      </div>
+    </div>
+  );
+}
+
+function ScreenshotsTab({ site }) {
+  const [pages, setPages] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [capturing, setCapturing] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(() => {
+    if (!site?._id) return;
+    setLoading(true);
+    api.screenshotsLatest(site._id)
+      .then(r => setPages(r.pages || []))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [site?._id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function runCapture() {
+    setCapturing(true); setError(null);
+    try {
+      await api.screenshotsCapture(site._id);
+      load();
+    } catch (e) { setError(e.message); }
+    finally { setCapturing(false); }
+  }
+
+  return (
+    <div className="sdp-tab-content active">
+      <div className="sdp-block-head">
+        <div className="sdp-block-title">Page Screenshots</div>
+        <button onClick={runCapture} disabled={capturing} style={{ background: '#5b46f5', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: 5, fontSize: 11, cursor: capturing ? 'default' : 'pointer', opacity: capturing ? 0.6 : 1 }}>
+          {capturing ? 'Capturing…' : 'Capture Now'}
+        </button>
+      </div>
+      {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
+      {!loading && error && <div style={{ padding: 16, color: '#fca5a5', fontSize: 13 }}>{error}</div>}
+      {!loading && !error && (!pages || pages.length === 0) && (
+        <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No pages configured. Add monitored pages first.</div>
+      )}
+      {!loading && pages && pages.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+          {pages.map(p => (
+            <ScreenshotCard key={p.pageLabel} pageLabel={p.pageLabel} pagePath={p.pagePath} latest={p.latest} />
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: '#5a6480', marginTop: 10 }}>
+        Automatic captures run 3x/day. A flagged "Possible UI change" means this capture differs significantly from the previous one — check for glitches.
+      </div>
+    </div>
+  );
+}
+
+const TAB_BODIES = { overview: OverviewTab, details: DetailsTab, alerts: AlertsTab, scans: ScansTab, backups: BackupsTab, updates: UpdatesTab, performance: PerformanceTab, screenshots: ScreenshotsTab };
 
 export default function Sites() {
   const { setPageClass } = usePage();
@@ -586,19 +799,28 @@ export default function Sites() {
                     { key: 'scans',    label: 'Scans' },
                     { key: 'backups',  label: 'Backups' },
                     { key: 'updates',  label: <>Updates {selectedRow?.upd > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}>({selectedRow.upd})</span>}</> },
+                    { key: 'performance', label: 'Performance' },
+                    { key: 'screenshots', label: 'Screenshots' },
                   ].map(t => (
                     <div key={t.key} className={`sdp-tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</div>
                   ))}
                 </div>
 
                 <div className="sdp-body">
-                  {snapLoading && <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>Loading data…</div>}
-                  {!snapLoading && !snap && (
-                    <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>
-                      No snapshot yet for this site. <button onClick={() => handleSync(selectedId)} style={{ marginLeft: 6, background: '#5b46f5', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 4, cursor: 'pointer' }}>Sync Now</button>
-                    </div>
+                  {/* Performance + Screenshots fetch their own data independent of the
+                      connector snapshot, so they render even before a sync has run. */}
+                  {(tab === 'performance' || tab === 'screenshots') && <TabBody site={selected} snap={snap} />}
+                  {tab !== 'performance' && tab !== 'screenshots' && (
+                    <>
+                      {snapLoading && <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>Loading data…</div>}
+                      {!snapLoading && !snap && (
+                        <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>
+                          No snapshot yet for this site. <button onClick={() => handleSync(selectedId)} style={{ marginLeft: 6, background: '#5b46f5', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 4, cursor: 'pointer' }}>Sync Now</button>
+                        </div>
+                      )}
+                      {!snapLoading && snap && <TabBody site={selected} snap={snap} />}
+                    </>
                   )}
-                  {!snapLoading && snap && <TabBody site={selected} snap={snap} />}
                 </div>
               </>
             )}
