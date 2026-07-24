@@ -31,4 +31,17 @@ export const api = {
   listUpdates: ()                 => request('/api/updates'),
   listScans:   ()                 => request('/api/scans'),
   listBackups: ()                 => request('/api/backups'),
+
+  // Real PageSpeed (Google) score + Core Web Vitals, per monitored page
+  pageSpeedLatest:  (id)          => request(`/api/pagespeed/${id}/latest`),
+  pageSpeedHistory: (id, page, days = 30) => request(`/api/pagespeed/${id}/history?page=${encodeURIComponent(page)}&days=${days}`),
+  pageSpeedCheck:   (id)          => request(`/api/pagespeed/${id}/check`, { method: 'POST' }),
+
+  // Hourly/3x-daily screenshots, per monitored page
+  screenshotsLatest:  (id)        => request(`/api/screenshots/${id}/latest`),
+  screenshotsHistory: (id, page, limit = 24) => request(`/api/screenshots/${id}/history?page=${encodeURIComponent(page)}&limit=${limit}`),
+  screenshotsCapture: (id)        => request(`/api/screenshots/${id}/capture`, { method: 'POST' }),
+
+  // Re-scan sitemap for real Shop/Contact Us/Track Order slugs
+  detectPages: (id)               => request(`/api/sites/${id}/detect-pages`, { method: 'POST' }),
 };
