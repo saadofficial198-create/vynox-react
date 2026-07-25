@@ -7,7 +7,6 @@ import Scans from './pages/Scans';
 import Backups from './pages/Backups';
 import Updates from './pages/Updates';
 import Reports from './pages/Reports';
-import Notifications from './pages/Notifications';
 import SettingsPage from './pages/Settings';
 
 /* Tiny inline placeholder until each page is ported. */
@@ -31,7 +30,6 @@ export default function App() {
         <Route path="/backups" element={<Backups />} />
         <Route path="/updates" element={<Updates />} />
         <Route path="/reports" element={<Reports />} />
-        <Route path="/notifications" element={<Notifications />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/products" element={<Placeholder name="Products" />} />
         <Route path="/api-keys" element={<Placeholder name="API Keys" />} />

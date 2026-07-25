@@ -3,18 +3,9 @@ import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
+import HealthBadge from '../components/HealthBadge';
 import { api } from '../api';
 import '../styles/scans.css';
-
-const ScoreSVG = ({ score, color, dash }) => (
-  <div className="score-wrap">
-    <svg width="44" height="44" viewBox="0 0 44 44">
-      <circle cx="22" cy="22" r="16" fill="none" stroke="#1a2235" strokeWidth="3"/>
-      <circle cx="22" cy="22" r="16" fill="none" stroke={color} strokeWidth="3" pathLength="100" strokeDasharray={dash} strokeLinecap="round" transform="rotate(-90 22 22)"/>
-      <text x="22" y="26" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="700">{score}%</text>
-    </svg>
-  </div>
-);
 
 function fmtParts(iso) {
   if (!iso) return ['—', ''];
@@ -39,8 +30,6 @@ export default function Scans() {
   const [sites, setSites]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setErr]   = useState(null);
-  const [running, setRunning] = useState(null); // siteId during scan
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [tab, setTab]     = useState('all');
   const [search, setSearch] = useState('');
@@ -54,14 +43,6 @@ export default function Scans() {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
-
-  async function runScan(siteId) {
-    setPickerOpen(false);
-    setRunning(siteId);
-    try { await api.syncSite(siteId); load(); }
-    catch (e) { alert('Scan failed: ' + e.message); }
-    finally { setRunning(null); }
-  }
 
   const counts = useMemo(() => {
     const c = { total: scans.length, completed: 0, failed: 0, suspicious: 0, totalFiles: 0 };
@@ -183,15 +164,14 @@ export default function Scans() {
                   <th style={{ minWidth: 110 }}>Started At</th>
                   <th>Files</th>
                   <th>Suspicious</th>
-                  <th>Score</th>
-                  <th>Actions</th>
+                  <th>Health Status</th>
                 </tr>
               </thead>
               <tbody>
-                {loading && (<tr className="no-results-row"><td colSpan={9}>Loading scans…</td></tr>)}
-                {!loading && loadError && (<tr className="no-results-row"><td colSpan={9} style={{ color: '#fca5a5' }}>Failed to load: {loadError}</td></tr>)}
+                {loading && (<tr className="no-results-row"><td colSpan={8}>Loading scans…</td></tr>)}
+                {!loading && loadError && (<tr className="no-results-row"><td colSpan={8} style={{ color: '#fca5a5' }}>Failed to load: {loadError}</td></tr>)}
                 {!loading && !loadError && visible.length === 0 && (
-                  <tr className="no-results-row"><td colSpan={9}>{scans.length === 0 ? 'No scans yet. Click "Run New Scan" to start.' : 'No scans match your filters.'}</td></tr>
+                  <tr className="no-results-row"><td colSpan={8}>{scans.length === 0 ? 'No scans yet — the daily automated check runs at 08:00 AM.' : 'No scans match your filters.'}</td></tr>
                 )}
                 {!loading && visible.map(s => {
                   const [dm, dt] = fmtParts(s.date);
@@ -209,12 +189,7 @@ export default function Scans() {
                       <td><div className="date-main">{dm}</div><div className="date-time">{dt}</div></td>
                       <td>{s.filesScanned > 0 ? <span className="duration-val">{s.filesScanned}</span> : <span className="duration-empty">—</span>}</td>
                       <td>{s.suspicious > 0 ? <span className="sev sev-high">{s.suspicious}</span> : <span style={{ color: '#22c55e', fontWeight: 600 }}>Clean</span>}</td>
-                      <td>{s.score != null ? <ScoreSVG score={s.score} color={s.scoreColor} dash={s.scoreDash} /> : <span className="duration-empty">—</span>}</td>
-                      <td>
-                        <div className="action-cell">
-                          <button className="view-btn" onClick={() => runScan(s.siteId)} disabled={running === s.siteId}>{running === s.siteId ? 'Scanning…' : 'Re-scan'}</button>
-                        </div>
-                      </td>
+                      <td>{s.healthStatus ? <HealthBadge status={s.healthStatus} label={s.healthLabel} /> : <span className="duration-empty">—</span>}</td>
                     </tr>
                   );
                 })}
@@ -277,11 +252,6 @@ export default function Scans() {
           <div className="panel">
             <div className="panel-header"><div className="panel-title">Quick Actions</div></div>
             <div className="qa-grid">
-              <div className="qa-card" onClick={() => setPickerOpen(true)} style={{ cursor: sites.length ? 'pointer' : 'not-allowed', opacity: sites.length ? 1 : 0.5 }}>
-                <div className="qa-icon qi-blue"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
-                <div className="qa-label">Run New Scan</div>
-                <div className="qa-sub">{sites.length ? 'Start scan on a site' : 'Add a site first'}</div>
-              </div>
               <div className="qa-card" onClick={load}>
                 <div className="qa-icon qi-cyan"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></div>
                 <div className="qa-label">Refresh List</div>
@@ -297,32 +267,6 @@ export default function Scans() {
         </div>
       </div>
 
-      {pickerOpen && (
-        <div onClick={() => setPickerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(7,11,22,0.72)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 92vw)', background: '#0f1729', border: '1px solid #2a3448', borderRadius: 10, boxShadow: '0 24px 64px rgba(0,0,0,0.55)', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1e2840' }}>
-              <div style={{ fontSize: 17, fontWeight: 600, color: '#fff' }}>Run scan on which site?</div>
-              <div style={{ fontSize: 12, color: '#7a839e', marginTop: 4 }}>This pulls fresh data and stores a new scan snapshot.</div>
-            </div>
-            <div style={{ maxHeight: 360, overflowY: 'auto', padding: 8 }}>
-              {sites.length === 0 && <div style={{ padding: 20, color: '#7a839e', textAlign: 'center', fontSize: 13 }}>No sites connected. Add one in Sites page first.</div>}
-              {sites.map(s => (
-                <button key={s._id} onClick={() => runScan(s._id)} disabled={running === s._id} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px 14px', background: 'transparent', border: '1px solid transparent', color: '#e2e8f0', borderRadius: 6, cursor: 'pointer', marginBottom: 4 }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(91,70,245,0.10)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                  <div style={{ width: 32, height: 32, borderRadius: 6, background: '#5b46f5', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>W</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500 }}>{s.name}</div>
-                    <div style={{ fontSize: 12, color: '#7a839e', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.url}</div>
-                  </div>
-                  <span style={{ fontSize: 12, color: running === s._id ? '#f59e0b' : '#5b46f5' }}>{running === s._id ? 'Scanning…' : 'Start →'}</span>
-                </button>
-              ))}
-            </div>
-            <div style={{ padding: '12px 22px', borderTop: '1px solid #1e2840', textAlign: 'right' }}>
-              <button onClick={() => setPickerOpen(false)} style={{ background: 'transparent', border: '1px solid #2a3448', color: '#7a839e', padding: '8px 16px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
+import HealthBadge from '../components/HealthBadge';
 import { api } from '../api';
 import '../styles/dashboard.css';
 
@@ -14,12 +15,6 @@ function Sparkline({ id, color, points }) {
   );
 }
 
-function scoreCls(s) {
-  if (s == null) return 'sr-gray';
-  if (s >= 80) return 'sr-green';
-  if (s >= 60) return 'sr-yellow';
-  return 'sr-orange';
-}
 function alertCls(n) { return n === 0 ? 'an-green' : n >= 6 ? 'an-red' : 'an-orange'; }
 function updCls(n)   { return n === 0 ? 'upd-gray' : 'upd-orange'; }
 function relTime(iso) {
@@ -53,38 +48,46 @@ export default function Dashboard() {
   }, []);
 
   const stats = useMemo(() => {
-    const scoreList = sites.map(s => s.latest?.score).filter(v => typeof v === 'number');
-    const avgScore = scoreList.length ? Math.round(scoreList.reduce((a, b) => a + b, 0) / scoreList.length) : null;
+    const good     = sites.filter(s => s.latest?.status === 'good').length;
+    const warning  = sites.filter(s => s.latest?.status === 'warning').length;
+    const critical = sites.filter(s => s.latest?.status === 'critical').length;
+    const needsAttention = warning + critical;
     const high = alerts.filter(a => a.severity === 'high').length;
     const med  = alerts.filter(a => a.severity === 'medium').length;
     const low  = alerts.filter(a => a.severity === 'low').length;
     const scans7d = scans.filter(s => s.date && (Date.now() - new Date(s.date).getTime() < 7 * 86400000)).length;
-    return { totalSites: sites.length, avgScore, totalAlerts: alerts.length, high, med, low, scans7d, backupsOk: backups.summary?.success || 0 };
+    return { totalSites: sites.length, good, warning, critical, needsAttention, totalAlerts: alerts.length, high, med, low, scans7d, backupsOk: backups.summary?.success || 0 };
   }, [sites, alerts, scans, backups]);
 
   const STAT_CARDS = [
     { iconCls: 'si-blue',    icon: <><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>, label: 'Total Sites', value: stats.totalSites, sub: 'All Connected Sites', sparkId: 'grad-3b82f6', color: '#3b82f6', points: '2,22 12,18 22,20 32,14 42,16 52,12 66,14' },
-    { iconCls: 'si-green',   icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></>, label: 'Security Score (Avg)', value: stats.avgScore != null ? `${stats.avgScore}%` : '—', sub: 'Across all sites', subCls: 'green', sparkId: 'grad-22c55e', color: '#22c55e', points: '2,22 12,18 22,20 32,14 42,16 52,10 66,8' },
+    { iconCls: stats.needsAttention === 0 ? 'si-green' : 'si-red', icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></>, label: 'Sites Needing Attention', value: stats.needsAttention, sub: `${stats.good} Good · ${stats.warning} Warning · ${stats.critical} Critical`, subCls: stats.needsAttention === 0 ? 'green' : 'red', sparkId: 'grad-22c55e', color: stats.needsAttention === 0 ? '#22c55e' : '#ef4444', points: '2,22 12,18 22,20 32,14 42,16 52,10 66,8' },
     { iconCls: 'si-red',     icon: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>, label: 'Total Alerts', value: stats.totalAlerts, sub: `${stats.high} high · ${stats.med} medium · ${stats.low} low`, subCls: 'red', sparkId: 'grad-ef4444', color: '#ef4444', points: '2,16 12,20 22,12 32,22 42,10 52,18 66,14' },
     { iconCls: 'si-cyan',    icon: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>, label: 'Scans (Last 7 Days)', value: stats.scans7d, sub: 'Across all sites', sparkId: 'grad-06b6d4', color: '#06b6d4', points: '2,18 12,14 22,18 32,12 42,14 52,10 66,12' },
     { iconCls: 'si-emerald', icon: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></>, label: 'Backups OK', value: `${stats.backupsOk} / ${stats.totalSites}`, sub: backups.summary?.totalBackupSize ? `${backups.summary.totalBackupSize} total` : '—', sparkId: 'grad-10b981', color: '#10b981', points: '2,18 12,22 22,16 32,18 42,12 52,14 66,10' },
   ];
 
   const lineChartConfig = useMemo(() => (ctx) => {
-    const grad = ctx.createLinearGradient(0, 0, 0, 185);
-    grad.addColorStop(0, 'rgba(34,197,94,0.3)'); grad.addColorStop(1, 'rgba(34,197,94,0.0)');
-    // Bucket scans by day → average score from scans on that day (or carry forward)
-    const days = []; const data = [];
+    const gradCrit = ctx.createLinearGradient(0, 0, 0, 185);
+    gradCrit.addColorStop(0, 'rgba(239,68,68,0.3)'); gradCrit.addColorStop(1, 'rgba(239,68,68,0.0)');
+    const gradRec = ctx.createLinearGradient(0, 0, 0, 185);
+    gradRec.addColorStop(0, 'rgba(245,158,11,0.25)'); gradRec.addColorStop(1, 'rgba(245,158,11,0.0)');
+    // Bucket scans by day → total critical + recommended issue counts across all sites that day
+    const days = []; const criticalData = []; const recommendedData = [];
     for (let i = 6; i >= 0; i--) {
       const dt = new Date(Date.now() - i * 86400000);
       days.push(dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-      const scansThatDay = scans.filter(s => { const d = new Date(s.date); return d.toDateString() === dt.toDateString() && typeof s.score === 'number'; });
-      data.push(scansThatDay.length ? Math.round(scansThatDay.reduce((a, b) => a + b.score, 0) / scansThatDay.length) : null);
+      const scansThatDay = scans.filter(s => { const d = new Date(s.date); return d.toDateString() === dt.toDateString(); });
+      criticalData.push(scansThatDay.length ? scansThatDay.reduce((a, b) => a + (b.critical || 0), 0) : null);
+      recommendedData.push(scansThatDay.length ? scansThatDay.reduce((a, b) => a + (b.recommended || 0), 0) : null);
     }
     return {
       type: 'line',
-      data: { labels: days, datasets: [{ data, borderColor: '#22c55e', backgroundColor: grad, tension: 0.42, fill: true, pointBackgroundColor: '#22c55e', pointRadius: 4, borderWidth: 2.2, spanGaps: true }] },
-      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2840', titleColor: '#e2e8f0', bodyColor: '#7a839e', borderColor: '#2a3448', borderWidth: 1 } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.8)' }, ticks: { color: '#5a6480' } }, y: { min: 0, max: 100, grid: { color: 'rgba(30,37,53,0.8)' }, ticks: { color: '#5a6480', callback: (v) => v + '%', stepSize: 25 } } } },
+      data: { labels: days, datasets: [
+        { label: 'Critical', data: criticalData, borderColor: '#ef4444', backgroundColor: gradCrit, tension: 0.42, fill: true, pointBackgroundColor: '#ef4444', pointRadius: 4, borderWidth: 2.2, spanGaps: true },
+        { label: 'Recommended', data: recommendedData, borderColor: '#f59e0b', backgroundColor: gradRec, tension: 0.42, fill: true, pointBackgroundColor: '#f59e0b', pointRadius: 4, borderWidth: 2.2, spanGaps: true },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2840', titleColor: '#e2e8f0', bodyColor: '#7a839e', borderColor: '#2a3448', borderWidth: 1 } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.8)' }, ticks: { color: '#5a6480' } }, y: { min: 0, grid: { color: 'rgba(30,37,53,0.8)' }, ticks: { color: '#5a6480', stepSize: 1 } } } },
     };
   }, [scans]);
 
@@ -125,13 +128,13 @@ export default function Dashboard() {
             </div>
             <table>
               <thead>
-                <tr><th>Site</th><th>Security Score</th><th>Alerts</th><th>Last Scan</th><th>Updates</th><th>Status</th><th></th></tr>
+                <tr><th>Site</th><th>Health Status</th><th>Alerts</th><th>Last Scan</th><th>Updates</th><th>Status</th><th></th></tr>
               </thead>
               <tbody>
                 {loading && (<tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#7a839e' }}>Loading…</td></tr>)}
                 {!loading && sitesTop5.length === 0 && (<tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#7a839e' }}>No sites yet — add one in Sites page.</td></tr>)}
                 {!loading && sitesTop5.map((s) => {
-                  const score = s.latest?.score;
+                  const status = s.latest?.status;
                   const alerts = s.latest?.alerts ?? 0;
                   const upd = s.latest?.updates ?? 0;
                   return (
@@ -142,7 +145,7 @@ export default function Dashboard() {
                           <div><div className="site-name">{s.name}</div><div className="site-sub">{(s.url || '').replace(/^https?:\/\//, '')}</div></div>
                         </div>
                       </td>
-                      <td><div className={`score-ring ${scoreCls(score)}`}>{score != null ? `${score}%` : '—'}</div></td>
+                      <td>{status ? <HealthBadge status={status} label={s.latest?.label} /> : <span style={{ color: '#5a6480', fontSize: 12 }}>—</span>}</td>
                       <td><span className={`alert-num ${alertCls(alerts)}`}>{alerts}</span></td>
                       <td>
                         <div className="lastscan-main">{relTime(s.lastSyncedAt)}</div>
@@ -164,12 +167,15 @@ export default function Dashboard() {
           <div className="mid-row" style={{ marginBottom: 14 }}>
             <div className="panel chart-panel">
               <div className="chart-inner">
-                <div className="chart-header"><div className="panel-title">Security Score (Last 7 Days)</div></div>
+                <div className="chart-header"><div className="panel-title">Issues (Last 7 Days)</div></div>
                 <div className="chart-canvas-wrap">
                   {scans.length > 0 && <ChartCanvas config={lineChartConfig} />}
                   {scans.length === 0 && <div style={{ padding: 30, color: '#7a839e', textAlign: 'center' }}>No scans yet</div>}
                 </div>
-                <div className="chart-legend-row"><div className="chart-legend-dot" />Average Security Score</div>
+                <div className="chart-legend-row">
+                  <div className="chart-legend-dot" style={{ background: '#ef4444' }} />Critical
+                  <div className="chart-legend-dot" style={{ background: '#f59e0b', marginLeft: 14 }} />Recommended
+                </div>
               </div>
             </div>
 

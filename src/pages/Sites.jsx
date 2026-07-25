@@ -1,21 +1,17 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import AddSiteModal from '../components/AddSiteModal';
+import HealthBadge from '../components/HealthBadge';
+import { healthStatusMeta } from '../healthStatus';
 import { api } from '../api';
 import '../styles/sites.css';
 
 const alertCls = n => n === 0 ? 'an-zero' : n >= 6 ? 'an-red' : 'an-orange';
 const updCls   = n => n === 0 ? 'upd-zero' : n >= 7 ? 'upd-red' : 'upd-orange';
 
-function scoreColor(s) {
-  if (s == null) return '#5a6480';
-  if (s >= 80) return '#22c55e';
-  if (s >= 60) return '#f59e0b';
-  return '#ef4444';
-}
 function relTime(iso) {
   if (!iso) return 'Never';
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -32,7 +28,7 @@ function rowFor(site) {
   const l = site.latest || {};
   return {
     id: site._id, name: site.name, sub: site.url,
-    score: l.score ?? null, color: scoreColor(l.score),
+    status: l.status ?? null, statusLabel: l.label ?? null,
     online: site.status === 'online',
     alerts: l.alerts ?? null, upd: l.updates ?? null,
     php: l.phpVersion ?? '—',
@@ -40,38 +36,6 @@ function rowFor(site) {
     lastSyncedAt: site.lastSyncedAt,
     raw: site,
   };
-}
-
-function drawRing(canvas, score, color, lineWidth) {
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const s = canvas.width, cx = s/2, cy = s/2, r = s/2 - 3;
-  const lw = lineWidth || 3.5;
-  ctx.clearRect(0, 0, s, s);
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = lw; ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI/2, -Math.PI/2 + (score/100)*Math.PI*2);
-  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
-}
-function ScoreRing({ score, color, size = 36, lineWidth }) {
-  const ref = useRef(null);
-  useEffect(() => { drawRing(ref.current, score, color, lineWidth); }, [score, color, lineWidth]);
-  return (
-    <div className="score-ring-wrap">
-      <canvas ref={ref} width={size} height={size} />
-      <span className="score-ring-label">{score}%</span>
-    </div>
-  );
-}
-function DetailRing({ score, color }) {
-  const ref = useRef(null);
-  useEffect(() => { drawRing(ref.current, score ?? 0, color || '#5a6480', 6); }, [score, color]);
-  return (
-    <div className="sdp-ring-container">
-      <canvas ref={ref} width={72} height={72} />
-      <span className="sdp-ring-val">{score == null ? '—' : `${score}%`}</span>
-    </div>
-  );
 }
 
 /* ============ TABS — driven by selected site + snapshot ============ */
@@ -108,23 +72,26 @@ function OverviewTab({ site, snap }) {
 
       <div>
         <div className="sdp-chart-header">
-          <div className="sdp-section-title">Security Score History</div>
+          <div className="sdp-section-title">Issues History</div>
           <CustomSelect sm value={period} onChange={setPeriod} options={['Last 7 Days', 'Last 30 Days', 'Last 90 Days']} />
         </div>
         <div className="sdp-chart-wrap">
           <ChartCanvas config={(ctx) => {
-            const c = scoreColor(site?.latest?.score);
-            const pts = history.length > 0 ? history : (site?.latest?.score != null ? [{ date: new Date().toISOString(), score: site.latest.score }] : []);
+            const pts = history.length > 0 ? history : [];
             const labels = pts.map(p => new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            const data   = pts.map(p => p.score);
+            const criticalData    = pts.map(p => p.critical);
+            const recommendedData = pts.map(p => p.recommended);
             return {
               type: 'line',
-              data: { labels, datasets: [{ data, borderColor: c, backgroundColor: 'rgba(91,70,245,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: c }] },
-              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', maxTicksLimit: 7 } }, y: { min: 0, max: 100, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', callback: v => v + '%', stepSize: 25 } } } },
+              data: { labels, datasets: [
+                { label: 'Critical', data: criticalData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#ef4444' },
+                { label: 'Recommended', data: recommendedData, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#f59e0b' },
+              ] },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', maxTicksLimit: 7 } }, y: { min: 0, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', stepSize: 1 } } } },
             };
           }} deps={[history]} />
         </div>
-        {history.length <= 1 && <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — sync again to build history</div>}
+        {history.length <= 1 && <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — check back after the next daily scan</div>}
       </div>
     </div>
   );
@@ -433,7 +400,6 @@ function ScreenshotCard({ pageLabel, pagePath, latest }) {
 function ScreenshotsTab({ site }) {
   const [pages, setPages] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(() => {
@@ -447,22 +413,10 @@ function ScreenshotsTab({ site }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function runCapture() {
-    setCapturing(true); setError(null);
-    try {
-      await api.screenshotsCapture(site._id);
-      load();
-    } catch (e) { setError(e.message); }
-    finally { setCapturing(false); }
-  }
-
   return (
     <div className="sdp-tab-content active">
       <div className="sdp-block-head">
         <div className="sdp-block-title">Page Screenshots</div>
-        <button onClick={runCapture} disabled={capturing} style={{ background: '#5b46f5', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: 5, fontSize: 11, cursor: capturing ? 'default' : 'pointer', opacity: capturing ? 0.6 : 1 }}>
-          {capturing ? 'Capturing…' : 'Capture Now'}
-        </button>
       </div>
       {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
       {!loading && error && <div style={{ padding: 16, color: '#fca5a5', fontSize: 13 }}>{error}</div>}
@@ -499,12 +453,6 @@ export default function Sites() {
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [syncingIds, setSyncingIds] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem('vynox_syncing') || '[]')); }
-    catch { return new Set(); }
-  });
-  const [syncError,  setSyncError]  = useState({});
-  const loadSitesRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
   const [snap, setSnap] = useState(null);
   const [snapLoading, setSnapLoading] = useState(false);
@@ -518,66 +466,8 @@ export default function Sites() {
       if ((r.sites || []).length && !selectedId) setSelectedId(r.sites[0]._id);
     } catch (e) { setLoadError(e.message); } finally { setLoading(false); }
   }, [selectedId]);
-  loadSitesRef.current = loadSites;
-
-  // Persist syncing IDs to localStorage + update state
-  const markSyncing = useCallback((id) => {
-    setSyncingIds(prev => {
-      const next = new Set(prev); next.add(id);
-      localStorage.setItem('vynox_syncing', JSON.stringify([...next]));
-      return next;
-    });
-  }, []);
-  const unmarkSyncing = useCallback((id) => {
-    setSyncingIds(prev => {
-      const next = new Set(prev); next.delete(id);
-      localStorage.setItem('vynox_syncing', JSON.stringify([...next]));
-      return next;
-    });
-  }, []);
-
-  // Poll a single site until the backend reports done/error/idle (max 3 min)
-  const pollUntilDone = useCallback(async (id) => {
-    const deadline = Date.now() + 3 * 60 * 1000;
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 2500));
-      try {
-        const s = await api.syncStatus(id);
-        if (s.status !== 'running') return;
-      } catch { return; } // old backend — just stop
-    }
-  }, []);
 
   useEffect(() => { loadSites(); }, [loadSites]);
-
-  /* Resume polling for any syncs that were running before page refresh */
-  useEffect(() => {
-    const stored = (() => {
-      try { return JSON.parse(localStorage.getItem('vynox_syncing') || '[]'); }
-      catch { return []; }
-    })();
-    stored.forEach(id => {
-      api.syncStatus(id)
-        .then(s => {
-          if (s.status === 'running') {
-            pollUntilDone(id).then(() => {
-              unmarkSyncing(id);
-              loadSitesRef.current?.();
-            });
-          } else {
-            unmarkSyncing(id);
-          }
-        })
-        .catch(() => unmarkSyncing(id));
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* Auto-refresh when Scan All completes — no re-render every second */
-  useEffect(() => {
-    const handler = () => loadSites();
-    window.addEventListener('vynox:scan-complete', handler);
-    return () => window.removeEventListener('vynox:scan-complete', handler);
-  }, [loadSites]);
 
   useEffect(() => {
     if (!selectedId) { setSnap(null); return; }
@@ -596,18 +486,6 @@ export default function Sites() {
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
   }, [menu]);
 
-  async function handleSync(id) {
-    if (syncingIds.has(id)) return; // already syncing this site
-    markSyncing(id);
-    setSyncError(prev => ({ ...prev, [id]: null }));
-    try {
-      await api.syncSite(id);    // returns immediately on new backend
-      await pollUntilDone(id);   // waits until backend reports done
-      await loadSites();
-    } catch (e) {
-      setSyncError(prev => ({ ...prev, [id]: e.message }));
-    } finally { unmarkSyncing(id); }
-  }
   async function handleDelete(id, name) {
     if (!confirm(`Delete "${name}"? This removes the site and all its snapshots.`)) return;
     setMenu(null);
@@ -666,27 +544,6 @@ export default function Sites() {
           <div className="panel">
             <div className="sites-panel-header"><div className="sites-panel-title">All Sites</div></div>
 
-            {syncingIds.size > 0 && (
-              <div className="sync-banner">
-                <span className="sync-banner-spinner" />
-                <span className="sync-banner-text">
-                  {syncingIds.size === 1
-                    ? `Syncing ${sites.find(s => syncingIds.has(s._id))?.name || '1 site'}…`
-                    : `Syncing ${syncingIds.size} sites in parallel…`}
-                </span>
-                <div className="sync-banner-dots">
-                  {[...syncingIds].map(id => {
-                    const site = sites.find(s => s._id === id);
-                    return site ? (
-                      <span key={id} className="sync-banner-dot" title={site.name}>
-                        {(site.name || site.url || '?').charAt(0).toUpperCase()}
-                      </span>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            )}
-
             <div className="sites-toolbar">
               <div className="search-box">
                 <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -704,7 +561,7 @@ export default function Sites() {
               <table>
                 <thead>
                   <tr>
-                    <th>Site</th><th>Security Score</th><th>Status</th><th>Alerts</th><th>Last Scan</th><th>Updates</th><th>PHP</th><th>WP</th><th>Actions</th>
+                    <th>Site</th><th>Health Status</th><th>Status</th><th>Alerts</th><th>Last Scan</th><th>Updates</th><th>PHP</th><th>WP</th><th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -721,7 +578,7 @@ export default function Sites() {
                             <div><div className="site-name">{s.name}</div><div className="site-sub">{s.sub}</div></div>
                           </div>
                         </td>
-                        <td>{s.score == null ? <span style={{ color: '#5a6480', fontSize: 12 }}>—</span> : <ScoreRing score={s.score} color={s.color} />}</td>
+                        <td>{s.status == null ? <span style={{ color: '#5a6480', fontSize: 12 }}>—</span> : <HealthBadge status={s.status} label={s.statusLabel} />}</td>
                         <td>
                           <div className={`status-cell ${s.online ? 's-online' : 's-offline'}`}>
                             <span className={`status-dot ${s.online ? 'dot-on' : 'dot-off'}`} />
@@ -737,9 +594,6 @@ export default function Sites() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                             <button title="Preview" onClick={() => setSelectedId(s.id)} style={{ background: isSel ? '#5b46f5' : 'rgba(91,70,245,0.15)', border: 'none', color: isSel ? '#fff' : '#5b46f5', width: 28, height: 28, borderRadius: 5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </button>
-                            <button className={`scan-btn${syncingIds.has(s.id) ? ' scan-btn-syncing' : ''}`} title={syncError[s.id] || undefined} onClick={() => handleSync(s.id)} disabled={syncingIds.has(s.id)} style={syncError[s.id] ? { borderColor: '#ef4444', color: '#ef4444' } : undefined}>
-                              {syncingIds.has(s.id) ? <><span className="scan-btn-spin" /><span>Syncing</span></> : syncError[s.id] ? '!' : 'Sync'}
                             </button>
                             <button className="action-dot-btn" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ id: s.id, x: r.right - 140, y: r.bottom + 4 }); }}>
                               <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg>
@@ -786,8 +640,8 @@ export default function Sites() {
                     </div>
                   </div>
                   <div className="sdp-score-wrap">
-                    <DetailRing score={selectedRow?.score} color={selectedRow?.color} />
-                    <div className="sdp-score-lbl">Security Score</div>
+                    {selectedRow?.status ? <HealthBadge status={selectedRow.status} label={selectedRow.statusLabel} /> : <span style={{ color: '#5a6480', fontSize: 12 }}>—</span>}
+                    <div className="sdp-score-lbl">Health Status</div>
                   </div>
                 </div>
 
@@ -815,7 +669,7 @@ export default function Sites() {
                       {snapLoading && <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>Loading data…</div>}
                       {!snapLoading && !snap && (
                         <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>
-                          No snapshot yet for this site. <button onClick={() => handleSync(selectedId)} style={{ marginLeft: 6, background: '#5b46f5', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 4, cursor: 'pointer' }}>Sync Now</button>
+                          No snapshot yet for this site. Data populates automatically after the next daily health check.
                         </div>
                       )}
                       {!snapLoading && snap && <TabBody site={selected} snap={snap} />}
@@ -837,7 +691,6 @@ export default function Sites() {
             <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
             <div style={{ position: 'fixed', top: menu.y, left: menu.x, background: '#0f1729', border: '1px solid #2a3448', borderRadius: 6, padding: 4, minWidth: 160, zIndex: 100, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
               <button onClick={() => { setMenu(null); window.open(s.url, '_blank'); }} style={menuItem}>Open Site ↗</button>
-              <button onClick={() => { setMenu(null); handleSync(s._id); }} style={menuItem}>Sync Now</button>
               <button onClick={() => handleDelete(s._id, s.name)} style={{ ...menuItem, color: '#fca5a5' }}>Delete</button>
             </div>
           </>

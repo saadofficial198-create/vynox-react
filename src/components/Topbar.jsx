@@ -1,63 +1,38 @@
-import { useScanner } from '../context/ScannerContext';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../api';
 
-const PING_INTERVAL = 5 * 60; // 5 minutes in seconds
+/* Daily automated health check runs via GitHub Actions cron at 03:00 UTC = 08:00 AM PKT (fixed schedule). */
+const DAILY_CHECK_TIME = '08:00 AM';
 
 function UptimeCountdown() {
-  const [remaining, setRemaining] = useState(() => {
-    const lastAt = parseInt(localStorage.getItem('vynox_last_ping_at') || '0', 10);
-    if (!lastAt) { localStorage.setItem('vynox_last_ping_at', String(Date.now())); return PING_INTERVAL; }
-    const elapsed = Math.floor((Date.now() - lastAt) / 1000);
-    const left = PING_INTERVAL - (elapsed % PING_INTERVAL);
-    return left > 0 ? left : PING_INTERVAL;
-  });
   const [onlineCount, setOnlineCount] = useState(null);
   const [totalCount,  setTotalCount]  = useState(null);
-  const [flash, setFlash] = useState(false);
-
-  const fetchCounts = async () => {
-    try {
-      const r = await api.listSites();
-      const sites = r.sites || [];
-      setTotalCount(sites.length);
-      setOnlineCount(sites.filter(s => s.status === 'online').length);
-    } catch { /* ignore */ }
-  };
-
-  useEffect(() => { fetchCounts(); }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRemaining(prev => {
-        if (prev <= 1) {
-          localStorage.setItem('vynox_last_ping_at', String(Date.now()));
-          fetchCounts();
-          setFlash(true);
-          setTimeout(() => setFlash(false), 800);
-          return PING_INTERVAL;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
+    let cancelled = false;
+    const fetchCounts = async () => {
+      try {
+        const r = await api.listSites();
+        const sites = r.sites || [];
+        if (cancelled) return;
+        setTotalCount(sites.length);
+        setOnlineCount(sites.filter(s => s.status === 'online').length);
+      } catch { /* ignore */ }
+    };
+    fetchCounts();
+    const timer = setInterval(fetchCounts, 5 * 60 * 1000); // refresh every 5 minutes
+    return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
-  const circ   = 2 * Math.PI * 10;
-  const offset = circ * (1 - remaining / PING_INTERVAL);
-  const mins   = String(Math.floor(remaining / 60)).padStart(2, '0');
-  const secs   = String(remaining % 60).padStart(2, '0');
-
   return (
-    <div className={`uptime-pill${flash ? ' up-flash' : ''}`} title="Uptime monitor — checks every 5 minutes">
+    <div className="uptime-pill" title="Daily automated health check">
       <svg className="cd-ring-svg" width="26" height="26" viewBox="0 0 28 28">
         <circle cx="14" cy="14" r="10" className="cd-track" />
-        <circle cx="14" cy="14" r="10" className="up-ring-progress"
-          style={{ strokeDasharray: circ, strokeDashoffset: offset }} />
+        <circle cx="14" cy="14" r="10" className="up-ring-progress" style={{ strokeDasharray: 2 * Math.PI * 10, strokeDashoffset: 0 }} />
       </svg>
       <div className="cd-text">
-        <span className="cd-label">Uptime</span>
-        <span className="cd-val">{mins}:{secs}</span>
+        <span className="cd-label">Daily Check</span>
+        <span className="cd-val">{DAILY_CHECK_TIME}</span>
       </div>
       {totalCount !== null && (
         <div className="up-count">
@@ -67,15 +42,6 @@ function UptimeCountdown() {
       )}
     </div>
   );
-}
-
-function fmtTime(s) {
-  if (s >= 3600) {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return `${h}h ${String(m).padStart(2,'0')}m`;
-  }
-  return String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
 }
 
 function Subhead({ meta }) {
@@ -95,70 +61,29 @@ function Subhead({ meta }) {
   return <div className="topbar-sub">{meta.subtitle || ''}</div>;
 }
 
-function ScanCountdown() {
-  const { remaining, totalSecs, flash, isScanning, progress } = useScanner();
-  const isOff  = totalSecs === 0;
-  const circ   = 2 * Math.PI * 10;
-  const offset = isOff ? 0 : circ * (1 - remaining / totalSecs);
+function useActiveAlertCount() {
+  const [count, setCount] = useState(0);
 
-  /* Show scan progress instead of countdown while scanning */
-  const label = isScanning ? 'Scanning' : 'Next Scan';
-  const value = isScanning
-    ? (progress.total > 0 ? `${progress.done}/${progress.total}` : '…')
-    : isOff ? 'Off' : fmtTime(remaining);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCount = async () => {
+      try {
+        const r = await api.listAlerts();
+        if (cancelled) return;
+        const alerts = r.alerts || [];
+        setCount(alerts.filter(a => a.status === 'active').length);
+      } catch { /* ignore */ }
+    };
+    fetchCount();
+    const timer = setInterval(fetchCount, 5 * 60 * 1000); // refresh every 5 minutes
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
 
-  /* Ring progress during scan = sites done / total */
-  const scanOffset = isScanning && progress.total > 0
-    ? circ * (1 - progress.done / progress.total)
-    : offset;
-
-  return (
-    <div
-      className={`scan-countdown${isOff && !isScanning ? ' cd-off' : ''}${flash ? ' cd-flash' : ''}${isScanning ? ' cd-scanning' : ''}`}
-      title={isScanning && progress.current ? `Scanning: ${progress.current}` : 'Auto scan countdown'}
-    >
-      <svg className="cd-ring-svg" width="28" height="28" viewBox="0 0 28 28">
-        <circle cx="14" cy="14" r="10" className="cd-track" />
-        <circle
-          cx="14" cy="14" r="10"
-          className="cd-progress"
-          style={{ strokeDasharray: circ, strokeDashoffset: scanOffset }}
-        />
-      </svg>
-      <div className="cd-text">
-        <span className="cd-label">{label}</span>
-        <span className="cd-val">{value}</span>
-      </div>
-    </div>
-  );
-}
-
-function ScanAllBtn() {
-  const { isScanning, triggerScan, progress } = useScanner();
-  const label = isScanning
-    ? (progress.total > 0 ? `${progress.done}/${progress.total} done` : 'Starting…')
-    : 'Scan All';
-
-  return (
-    <button
-      className={`scan-all-btn${isScanning ? ' scanning' : ''}`}
-      onClick={triggerScan}
-      disabled={isScanning}
-      title={isScanning && progress.current ? `Scanning: ${progress.current}` : 'Scan all connected sites now'}
-    >
-      <svg className="sa-icon" viewBox="0 0 24 24">
-        <circle cx="11" cy="11" r="8" />
-        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        <line x1="11" y1="8"  x2="11" y2="14" />
-        <line x1="8"  y1="11" x2="14" y2="11" />
-      </svg>
-      <span className="sa-label">{label}</span>
-      <span className="sa-spinner" />
-    </button>
-  );
+  return count;
 }
 
 export default function Topbar({ meta = {}, onSearch }) {
+  const notifCount = useActiveAlertCount();
   return (
     <div className="topbar">
       <div className="topbar-left">
@@ -177,11 +102,9 @@ export default function Topbar({ meta = {}, onSearch }) {
 
       <div className="topbar-actions">
         <UptimeCountdown />
-        <ScanCountdown />
-        <ScanAllBtn />
         <button className="topbar-btn" aria-label="Notifications">
           <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
-          <span className="notif-badge">12</span>
+          {notifCount > 0 && <span className="notif-badge">{notifCount}</span>}
         </button>
         <button className="date-btn">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>

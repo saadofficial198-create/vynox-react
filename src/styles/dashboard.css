@@ -23,17 +23,6 @@
 .site-name { font-size: 12px; font-weight: 600; color: #e2e8f0; }
 .site-sub { font-size: 10px; color: #5a6480; margin-top: 1px; }
 
-.score-ring {
-  width: 38px; height: 38px;
-  border-radius: 50%;
-  border: 2.5px solid;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700;
-}
-.sr-green { border-color: #22c55e; color: #22c55e; }
-.sr-yellow { border-color: #eab308; color: #eab308; }
-.sr-orange { border-color: #f97316; color: #f97316; }
-
 .alert-num { font-weight: 700; font-size: 14px; }
 .an-red { color: #ef4444; }
 .an-orange { color: #f97316; }
