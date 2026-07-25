@@ -17,6 +17,25 @@ function Sparkline({ id, color, points }) {
 
 function alertCls(n) { return n === 0 ? 'an-green' : n >= 6 ? 'an-red' : 'an-orange'; }
 function updCls(n)   { return n === 0 ? 'upd-gray' : 'upd-orange'; }
+
+// Maps OtpCheck.overallStatus to a badge style (reusing the existing
+// hs-good/hs-warning/hs-critical/hs-unknown health-badge color classes) and
+// a one-line human-readable reason, so a failure is diagnosable at a glance.
+const OTP_STATUS_META = {
+  pass:                       { label: 'Working',                       cls: 'hs-good',     reason: null },
+  fail_plugin_inactive:       { label: 'Failed',                        cls: 'hs-critical', reason: 'OTP or WP Mail SMTP plugin is inactive' },
+  fail_smtp_not_configured:   { label: 'Failed',                        cls: 'hs-critical', reason: 'WP Mail SMTP is not configured' },
+  fail_checkout_trigger:      { label: 'Failed',                        cls: 'hs-critical', reason: 'Checkout did not trigger the OTP popup' },
+  fail_email_not_received:    { label: 'Failed',                        cls: 'hs-critical', reason: 'Email not received (checkout works)' },
+  error:                      { label: 'Error',                         cls: 'hs-warning',  reason: 'Check could not complete — see logs' },
+};
+function otpStatusMeta(status) {
+  return OTP_STATUS_META[status] || { label: 'Not yet checked', cls: 'hs-unknown', reason: null };
+}
+function otpDotCls(check) {
+  if (!check) return 'hs-unknown';
+  return otpStatusMeta(check.overallStatus).cls;
+}
 function relTime(iso) {
   if (!iso) return 'Never';
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -39,12 +58,20 @@ export default function Dashboard() {
   const [scans, setScans]     = useState([]);
   const [backups, setBackups] = useState({ summary: {}, backups: [] });
   const [loading, setLoading] = useState(true);
+  const [otpCheck, setOtpCheck]     = useState(null);
+  const [otpHistory, setOtpHistory] = useState([]);
+  const [otpLoading, setOtpLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([api.listSites(), api.listAlerts(), api.listScans(), api.listBackups()])
       .then(([s, a, sc, b]) => { setSites(s.sites || []); setAlerts(a.alerts || []); setScans(sc.scans || []); setBackups(b); })
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    Promise.all([api.otpCheckLatest(), api.otpCheckHistory(30)])
+      .then(([latest, hist]) => { setOtpCheck(latest.check || null); setOtpHistory((hist.checks || []).slice(0, 5)); })
+      .catch(() => {})
+      .finally(() => setOtpLoading(false));
   }, []);
 
   const stats = useMemo(() => {
@@ -161,6 +188,55 @@ export default function Dashboard() {
             </table>
             <div className="tbl-footer">
               <span className="tbl-footer-text">Showing {Math.min(sitesTop5.length, sites.length)} of {sites.length} sites</span>
+            </div>
+          </div>
+
+          <div className="panel" style={{ marginBottom: 14 }}>
+            <div className="panel-header">
+              <div className="panel-title">OTP Email Delivery (BoloCart)</div>
+            </div>
+            <div style={{ padding: '14px 18px' }}>
+              {otpLoading && <div style={{ color: '#7a839e', fontSize: 13 }}>Loading…</div>}
+              {!otpLoading && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span className={`health-badge ${otpDotCls(otpCheck)}`}>
+                      <span className="health-dot" />
+                      {otpStatusMeta(otpCheck?.overallStatus).label}
+                    </span>
+                    <span style={{ color: '#7a839e', fontSize: 12 }}>
+                      Last checked: {otpCheck?.checkedAt ? `${relTime(otpCheck.checkedAt)} · ${fmtDate(otpCheck.checkedAt)}` : 'Never'}
+                    </span>
+                  </div>
+
+                  {otpCheck && otpStatusMeta(otpCheck.overallStatus).reason && (
+                    <div style={{ marginTop: 8, color: '#f59e0b', fontSize: 12.5 }}>
+                      {otpStatusMeta(otpCheck.overallStatus).reason}
+                    </div>
+                  )}
+                  {otpCheck?.overallStatus === 'pass' && typeof otpCheck.deliveryLatencyMs === 'number' && (
+                    <div style={{ marginTop: 8, color: '#22c55e', fontSize: 12.5 }}>
+                      Delivered in {(otpCheck.deliveryLatencyMs / 1000).toFixed(1)}s
+                    </div>
+                  )}
+
+                  {otpHistory.length > 0 && (
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: '#5a6480', fontSize: 11.5 }}>Last {otpHistory.length} checks:</span>
+                      {otpHistory.map((c) => (
+                        <span
+                          key={c._id}
+                          title={`${otpStatusMeta(c.overallStatus).label} — ${fmtDate(c.checkedAt)}`}
+                          style={{
+                            width: 9, height: 9, borderRadius: '50%', display: 'inline-block',
+                            background: c.overallStatus === 'pass' ? '#22c55e' : c.overallStatus === 'error' ? '#f59e0b' : '#ef4444',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
 

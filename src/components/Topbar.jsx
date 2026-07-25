@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 
-/* Daily automated health check runs via GitHub Actions cron at 03:00 UTC = 08:00 AM PKT (fixed schedule). */
-const DAILY_CHECK_TIME = '08:00 AM';
+/* Daily automated health check runs via GitHub Actions cron, 2x/day at 12:00 AM and 12:00 PM PKT (fixed schedule). */
+const DAILY_CHECK_TIME = '12:00 AM / 12:00 PM';
 
 function UptimeCountdown() {
   const [onlineCount, setOnlineCount] = useState(null);

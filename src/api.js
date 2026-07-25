@@ -42,4 +42,8 @@ export const api = {
 
   // Re-scan sitemap for real Shop/Contact Us/Track Order slugs
   detectPages: (id)               => request(`/api/sites/${id}/detect-pages`, { method: 'POST' }),
+
+  // OTP email delivery monitor (BoloCart checkout -> WP Mail SMTP -> inbox)
+  otpCheckLatest:  ()              => request('/api/otp-check/latest'),
+  otpCheckHistory: (days = 30)     => request(`/api/otp-check/history?days=${days}`),
 };
