@@ -23,6 +23,7 @@ function updCls(n)   { return n === 0 ? 'upd-gray' : 'upd-orange'; }
 // a one-line human-readable reason, so a failure is diagnosable at a glance.
 const OTP_STATUS_META = {
   pass:                       { label: 'Working',                       cls: 'hs-good',     reason: null },
+  not_applicable:             { label: 'N/A',                           cls: 'hs-unknown',  reason: 'OTP plugin not active on this site' },
   fail_plugin_inactive:       { label: 'Failed',                        cls: 'hs-critical', reason: 'OTP or WP Mail SMTP plugin is inactive' },
   fail_smtp_not_configured:   { label: 'Failed',                        cls: 'hs-critical', reason: 'WP Mail SMTP is not configured' },
   fail_checkout_trigger:      { label: 'Failed',                        cls: 'hs-critical', reason: 'Checkout did not trigger the OTP popup' },
@@ -58,8 +59,7 @@ export default function Dashboard() {
   const [scans, setScans]     = useState([]);
   const [backups, setBackups] = useState({ summary: {}, backups: [] });
   const [loading, setLoading] = useState(true);
-  const [otpCheck, setOtpCheck]     = useState(null);
-  const [otpHistory, setOtpHistory] = useState([]);
+  const [otpChecks, setOtpChecks]   = useState([]); // one latest check per site
   const [otpLoading, setOtpLoading] = useState(true);
 
   useEffect(() => {
@@ -68,8 +68,8 @@ export default function Dashboard() {
       .catch(() => {})
       .finally(() => setLoading(false));
 
-    Promise.all([api.otpCheckLatest(), api.otpCheckHistory(30)])
-      .then(([latest, hist]) => { setOtpCheck(latest.check || null); setOtpHistory((hist.checks || []).slice(0, 5)); })
+    api.otpCheckLatest()
+      .then((latest) => setOtpChecks(latest.checks || []))
       .catch(() => {})
       .finally(() => setOtpLoading(false));
   }, []);
@@ -193,50 +193,40 @@ export default function Dashboard() {
 
           <div className="panel" style={{ marginBottom: 14 }}>
             <div className="panel-header">
-              <div className="panel-title">OTP Email Delivery (BoloCart)</div>
+              <div className="panel-title">OTP Email Delivery</div>
             </div>
             <div style={{ padding: '14px 18px' }}>
               {otpLoading && <div style={{ color: '#7a839e', fontSize: 13 }}>Loading…</div>}
-              {!otpLoading && (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <span className={`health-badge ${otpDotCls(otpCheck)}`}>
-                      <span className="health-dot" />
-                      {otpStatusMeta(otpCheck?.overallStatus).label}
-                    </span>
-                    <span style={{ color: '#7a839e', fontSize: 12 }}>
-                      Last checked: {otpCheck?.checkedAt ? `${relTime(otpCheck.checkedAt)} · ${fmtDate(otpCheck.checkedAt)}` : 'Never'}
-                    </span>
-                  </div>
-
-                  {otpCheck && otpStatusMeta(otpCheck.overallStatus).reason && (
-                    <div style={{ marginTop: 8, color: '#f59e0b', fontSize: 12.5 }}>
-                      {otpStatusMeta(otpCheck.overallStatus).reason}
-                    </div>
-                  )}
-                  {otpCheck?.overallStatus === 'pass' && typeof otpCheck.deliveryLatencyMs === 'number' && (
-                    <div style={{ marginTop: 8, color: '#22c55e', fontSize: 12.5 }}>
-                      Delivered in {(otpCheck.deliveryLatencyMs / 1000).toFixed(1)}s
-                    </div>
-                  )}
-
-                  {otpHistory.length > 0 && (
-                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: '#5a6480', fontSize: 11.5 }}>Last {otpHistory.length} checks:</span>
-                      {otpHistory.map((c) => (
-                        <span
-                          key={c._id}
-                          title={`${otpStatusMeta(c.overallStatus).label} — ${fmtDate(c.checkedAt)}`}
-                          style={{
-                            width: 9, height: 9, borderRadius: '50%', display: 'inline-block',
-                            background: c.overallStatus === 'pass' ? '#22c55e' : c.overallStatus === 'error' ? '#f59e0b' : '#ef4444',
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
+              {!otpLoading && otpChecks.length === 0 && (
+                <div style={{ color: '#7a839e', fontSize: 13 }}>No OTP checks recorded yet.</div>
               )}
+              {!otpLoading && otpChecks.map((check) => {
+                const meta = otpStatusMeta(check.overallStatus);
+                return (
+                  <div key={check._id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(90,100,128,0.15)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#e2e8f0', fontSize: 13, minWidth: 120 }}>{check.siteName || check.siteUrl}</span>
+                      <span className={`health-badge ${otpDotCls(check)}`}>
+                        <span className="health-dot" />
+                        {meta.label}
+                      </span>
+                      <span style={{ color: '#7a839e', fontSize: 12 }}>
+                        Last checked: {check.checkedAt ? `${relTime(check.checkedAt)} · ${fmtDate(check.checkedAt)}` : 'Never'}
+                      </span>
+                    </div>
+                    {meta.reason && (
+                      <div style={{ marginTop: 4, color: check.overallStatus === 'not_applicable' ? '#5a6480' : '#f59e0b', fontSize: 12.5 }}>
+                        {meta.reason}
+                      </div>
+                    )}
+                    {check.overallStatus === 'pass' && typeof check.deliveryLatencyMs === 'number' && (
+                      <div style={{ marginTop: 4, color: '#22c55e', fontSize: 12.5 }}>
+                        Delivered in {(check.deliveryLatencyMs / 1000).toFixed(1)}s
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 

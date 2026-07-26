@@ -43,7 +43,8 @@ export const api = {
   // Re-scan sitemap for real Shop/Contact Us/Track Order slugs
   detectPages: (id)               => request(`/api/sites/${id}/detect-pages`, { method: 'POST' }),
 
-  // OTP email delivery monitor (BoloCart checkout -> WP Mail SMTP -> inbox)
-  otpCheckLatest:  ()              => request('/api/otp-check/latest'),
-  otpCheckHistory: (days = 30)     => request(`/api/otp-check/history?days=${days}`),
+  // OTP email delivery monitor (any site's OTP plugin -> WP Mail SMTP -> inbox)
+  // Returns one row per registered site — not tied to any single site.
+  otpCheckLatest:  ()                        => request('/api/otp-check/latest'),
+  otpCheckHistory: (days = 30, siteId = null) => request(`/api/otp-check/history?days=${days}${siteId ? `&siteId=${siteId}` : ''}`),
 };
