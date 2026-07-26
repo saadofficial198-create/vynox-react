@@ -24,13 +24,38 @@ function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
+// Small color-coded chip showing the Home page's PageSpeed Performance
+// score next to the Health Status badge in the "All Sites" list — same
+// green/orange/red thresholds as the score rings on the Performance tab.
+// score === undefined means "not fetched yet", null means "no successful
+// check yet" — both render as nothing rather than a placeholder, so the row
+// doesn't jump/flicker while the per-site fetch is still in flight.
+function PerfScoreChip({ score }) {
+  if (score == null) return null;
+  const color = score >= 90 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
+  const bg = score >= 90 ? 'rgba(34,197,94,0.12)' : score >= 50 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
+  return (
+    <span
+      title="Home page performance score (Google PageSpeed)"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color, background: bg, border: `1px solid ${color}33`, borderRadius: 20, padding: '2px 8px' }}
+    >
+      ⚡ {score}
+    </span>
+  );
+}
+
 function rowFor(site) {
   const l = site.latest || {};
   return {
     id: site._id, name: site.name, sub: site.url,
     status: l.status ?? null, statusLabel: l.label ?? null,
     online: site.status === 'online',
-    alerts: l.alerts ?? null, upd: l.updates ?? null,
+    alerts: l.alerts ?? null,
+    // NOTE: the health-status payload's field is "updatesAvailable", not
+    // "updates" — this used to read l.updates (always undefined), which is
+    // why the Updates column showed "—" for every site even when the
+    // backend had a real count.
+    upd: l.updatesAvailable ?? null,
     php: l.phpVersion ?? '—',
     wp: l.wpVersion ?? site.wpVersion ?? '—',
     lastSyncedAt: site.lastSyncedAt,
@@ -576,6 +601,29 @@ export default function Sites() {
 
   useEffect(() => { loadSites(); }, [loadSites]);
 
+  // Home-page PageSpeed performance score for the "All Sites" list, shown
+  // next to the Health Status badge. Fetched separately (one lightweight
+  // GET per site, not one big backend change) since PageSpeedResult isn't
+  // part of the Site.latest payload the list already gets.
+  const [homePerfScores, setHomePerfScores] = useState({}); // { [siteId]: number|null }
+  useEffect(() => {
+    let cancelled = false;
+    sites.forEach((s) => {
+      if (homePerfScores[s._id] !== undefined) return; // already fetched (or fetching)
+      setHomePerfScores(prev => ({ ...prev, [s._id]: null })); // mark as "fetching" so we don't re-request
+      api.pageSpeedLatest(s._id)
+        .then(r => {
+          if (cancelled) return;
+          const home = (r.pages || []).find(p => p.pageLabel === 'Home');
+          const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
+          setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
+        })
+        .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: null })); });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sites]);
+
   useEffect(() => {
     if (!selectedId) { setSnap(null); return; }
     setSnapLoading(true); setSnap(null);
@@ -685,7 +733,12 @@ export default function Sites() {
                             <div><div className="site-name">{s.name}</div><div className="site-sub">{s.sub}</div></div>
                           </div>
                         </td>
-                        <td>{s.status == null ? <span style={{ color: '#5a6480', fontSize: 12 }}>—</span> : <HealthBadge status={s.status} label={s.statusLabel} />}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            {s.status == null ? <span style={{ color: '#5a6480', fontSize: 12 }}>—</span> : <HealthBadge status={s.status} label={s.statusLabel} />}
+                            <PerfScoreChip score={homePerfScores[s.id]} />
+                          </div>
+                        </td>
                         <td>
                           <div className={`status-cell ${s.online ? 's-online' : 's-offline'}`}>
                             <span className={`status-dot ${s.online ? 'dot-on' : 'dot-off'}`} />

@@ -95,7 +95,16 @@
 .sdp-score-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; flex-shrink: 0; }
 .sdp-score-lbl { font-size: 10px; color: #5b8df5; font-weight: 600; text-align: center; }
 
-.sdp-tabs { display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid #1e2535; overflow-x: auto; gap: 0; }
+.sdp-tabs {
+  display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid #1e2535;
+  overflow-x: auto; gap: 0;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #2a3448 transparent; /* Firefox: thumb, track */
+}
+.sdp-tabs::-webkit-scrollbar { height: 5px; }
+.sdp-tabs::-webkit-scrollbar-track { background: transparent; }
+.sdp-tabs::-webkit-scrollbar-thumb { background: #2a3448; border-radius: 10px; }
+.sdp-tabs::-webkit-scrollbar-thumb:hover { background: #3a4560; }
 .sdp-tab { padding: 9px 11px; font-size: 12px; font-weight: 500; color: #5a6480; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; transition: all .15s; }
 .sdp-tab:hover { color: #c8d0e0; }
 .sdp-tab.active { color: #5b8df5; border-bottom-color: #5b46f5; }
