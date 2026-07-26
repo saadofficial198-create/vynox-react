@@ -878,17 +878,16 @@ export default function Sites() {
                           </div>
                         </td>
                         <td>
-                          {/* Shows the Home page's real PageSpeed Performance score (ring,
-                              same style as the Performance tab) once it's been fetched.
-                              Falls back to the health-check status badge ("Needs
-                              Attention"/"Good"/etc.) only while no performance score is
-                              available yet, so the column is never fully empty. */}
-                          {homePerfScores[s.id] != null
-                            ? <ScoreRing label="Performance" val={homePerfScores[s.id]} />
-                            : (s.status == null
-                                ? <span style={{ color: '#5a6480', fontSize: 12 }}>—</span>
-                                : <HealthBadge status={s.status} label={s.statusLabel} />)
-                          }
+                          {/* Shows the Home page's real PageSpeed Performance score
+                              (ring, same style as the Performance tab). Per explicit
+                              user request, this column must NEVER fall back to the
+                              health-check "Needs Attention" style badge — if no
+                              PageSpeed score exists yet for Home (never checked,
+                              still checking, or check failed), ScoreRing itself
+                              already renders a dash ("—") in a neutral grey ring
+                              instead of a number, which is exactly the "just tell
+                              me there's no score" behavior asked for. */}
+                          <ScoreRing label="Performance" val={homePerfScores[s.id] ?? null} />
                         </td>
                         <td>
                           <div className={`status-cell ${s.online ? 's-online' : 's-offline'}`}>
