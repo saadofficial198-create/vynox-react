@@ -150,6 +150,134 @@ function DetailsTab({ site, snap }) {
         <Row k="Connected On" v={fmtDate(site.createdAt)} />
         <Row k="Last Synced" v={fmtDate(site.lastSyncedAt)} />
       </div>
+
+      <div style={{ marginTop: 22 }}>
+        <MonitoredPagesEditor site={site} />
+      </div>
+    </div>
+  );
+}
+
+// Lets the user pick which pages (from the live sitemap) get screenshots +
+// PageSpeed checks. A site's captures are PAUSED (see
+// Site.pagesConfigured in models/Site.js) until this has been saved at
+// least once — this is deliberate: the WordPress plugin auto-registers new
+// sites with no human review, and running checks against hardcoded
+// guessed slugs is what produced misleading "Failed"/404 screenshots
+// before this existed. Supports selecting any number of pages (including
+// none of the suggested ones, or more than one page of a similar "kind").
+function MonitoredPagesEditor({ site }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [candidates, setCandidates] = useState([]); // [{ label, path }] from the live sitemap
+  const [selected, setSelected] = useState({}); // { [path]: { label, enabled } }
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState(null);
+
+  const load = useCallback(() => {
+    if (!site?._id) return;
+    setLoading(true); setError(null); setSavedMsg(null);
+    api.pageCandidates(site._id)
+      .then((r) => {
+        setCandidates(r.candidates || []);
+        const initial = {};
+        (r.monitoredPages || []).forEach((p) => { initial[p.path] = { label: p.label, enabled: p.enabled !== false, matchStatus: p.matchStatus }; });
+        setSelected(initial);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [site?._id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function toggle(candidate) {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (next[candidate.path]) {
+        delete next[candidate.path];
+      } else {
+        next[candidate.path] = { label: candidate.label, enabled: true };
+      }
+      return next;
+    });
+  }
+
+  async function save() {
+    const pages = Object.entries(selected).map(([path, v]) => ({ label: v.label, path, enabled: v.enabled !== false }));
+    if (!pages.length) {
+      setError('Select at least one page before saving.');
+      return;
+    }
+    setSaving(true); setError(null); setSavedMsg(null);
+    try {
+      await api.saveMonitoredPages(site._id, pages);
+      setSavedMsg('Saved — screenshots and PageSpeed checks will use this selection from the next scheduled run.');
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectedCount = Object.keys(selected).length;
+
+  return (
+    <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#e6e9f0' }}>Monitored Pages</div>
+          <div style={{ fontSize: 11.5, color: '#7a839e', marginTop: 2 }}>
+            Choose which pages get screenshots and PageSpeed checks. Nothing runs for this site until you save a selection here.
+          </div>
+        </div>
+        <button
+          onClick={save}
+          disabled={saving || loading}
+          style={{ background: saving ? '#2a2f45' : '#5b46f5', color: saving ? '#a5b4fc' : '#fff', border: 'none', padding: '6px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: saving || loading ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+        >
+          {saving ? 'Saving…' : `Save Selection${selectedCount ? ` (${selectedCount})` : ''}`}
+        </button>
+      </div>
+
+      {loading && <div style={{ padding: '12px 0', color: '#7a839e', fontSize: 13 }}>Loading pages from sitemap…</div>}
+      {!loading && error && <div style={{ marginTop: 8, fontSize: 12, color: '#fca5a5', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px' }}>{error}</div>}
+      {!loading && savedMsg && <div style={{ marginTop: 8, fontSize: 12, color: '#86efac', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, padding: '8px 12px' }}>{savedMsg}</div>}
+
+      {!loading && !site.pagesConfigured && !savedMsg && (
+        <div style={{ marginTop: 8, fontSize: 12, color: '#fcd34d', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '8px 12px' }}>
+          No pages selected yet — screenshots and PageSpeed checks are paused for this site until you save a selection.
+        </div>
+      )}
+
+      {!loading && candidates.length > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+          {candidates.map((c) => {
+            const isSel = !!selected[c.path];
+            const info = selected[c.path];
+            return (
+              <label
+                key={c.path}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: isSel ? 'rgba(91,70,245,0.08)' : '#0d1520', border: `1px solid ${isSel ? 'rgba(91,70,245,0.3)' : '#182031'}`, cursor: 'pointer' }}
+              >
+                <input type="checkbox" checked={isSel} onChange={() => toggle(c)} style={{ accentColor: '#5b46f5', width: 15, height: 15, flexShrink: 0 }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 13, color: '#e6e9f0', fontWeight: 500 }}>{c.label}</div>
+                  <div style={{ fontSize: 10.5, color: '#5a6480' }}>{c.path}</div>
+                </div>
+                {info?.matchStatus === 'mismatch' && (
+                  <span style={{ fontSize: 10, color: '#fca5a5', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                    Slug mismatch
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+      )}
+      {!loading && candidates.length === 0 && !error && (
+        <div style={{ padding: '12px 0', color: '#7a839e', fontSize: 13 }}>No pages found in this site's sitemap.</div>
+      )}
     </div>
   );
 }

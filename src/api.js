@@ -47,8 +47,16 @@ export const api = {
   screenshotsHistory: (id, page, limit = 24) => request(`/api/screenshots/${id}/history?page=${encodeURIComponent(page)}&limit=${limit}`),
   screenshotsCapture: (id)        => request(`/api/screenshots/${id}/capture`, { method: 'POST' }),
 
-  // Re-scan sitemap for real Shop/Contact Us/Track Order slugs
+  // Re-scan sitemap for real Shop/Contact Us/Track Order slugs (legacy —
+  // overwrites monitoredPages with a best-guess; kept for backward compat)
   detectPages: (id)               => request(`/api/sites/${id}/detect-pages`, { method: 'POST' }),
+
+  // Page selection: fetch every page the live sitemap lists (for the
+  // checklist), and save the user's chosen selection. Saving flips
+  // Site.pagesConfigured to true server-side, which is what un-pauses
+  // screenshot/PageSpeed capture for this site (see routes/sites.js).
+  pageCandidates:     (id)         => request(`/api/sites/${id}/page-candidates`),
+  saveMonitoredPages: (id, pages)  => request(`/api/sites/${id}/monitored-pages`, { method: 'PUT', body: JSON.stringify({ pages }) }),
 
   // OTP email delivery monitor (any site's OTP plugin -> WP Mail SMTP -> inbox)
   // Returns one row per registered site — not tied to any single site.
