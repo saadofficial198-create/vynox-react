@@ -24,12 +24,8 @@ function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
-// Small color-coded chip showing the Home page's PageSpeed Performance
-// score next to the Health Status badge in the "All Sites" list — same
-// green/orange/red thresholds as the score rings on the Performance tab.
-// score === undefined means "not fetched yet", null means "no successful
-// check yet" — both render as nothing rather than a placeholder, so the row
-// doesn't jump/flicker while the per-site fetch is still in flight.
+// (superseded — Health Status column now renders the actual ScoreRing
+// component instead of this chip; kept only if referenced elsewhere)
 function PerfScoreChip({ score }) {
   if (score == null) return null;
   const color = score >= 90 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
@@ -734,10 +730,17 @@ export default function Sites() {
                           </div>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            {s.status == null ? <span style={{ color: '#5a6480', fontSize: 12 }}>—</span> : <HealthBadge status={s.status} label={s.statusLabel} />}
-                            <PerfScoreChip score={homePerfScores[s.id]} />
-                          </div>
+                          {/* Shows the Home page's real PageSpeed Performance score (ring,
+                              same style as the Performance tab) once it's been fetched.
+                              Falls back to the health-check status badge ("Needs
+                              Attention"/"Good"/etc.) only while no performance score is
+                              available yet, so the column is never fully empty. */}
+                          {homePerfScores[s.id] != null
+                            ? <ScoreRing label="Performance" val={homePerfScores[s.id]} />
+                            : (s.status == null
+                                ? <span style={{ color: '#5a6480', fontSize: 12 }}>—</span>
+                                : <HealthBadge status={s.status} label={s.statusLabel} />)
+                          }
                         </td>
                         <td>
                           <div className={`status-cell ${s.online ? 's-online' : 's-offline'}`}>
