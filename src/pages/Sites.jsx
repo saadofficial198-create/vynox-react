@@ -251,19 +251,19 @@ function MonitoredPagesEditor({ site }) {
       )}
 
       {!loading && candidates.length > 0 && (
-        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+        <div className="mpe-list" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
           {candidates.map((c) => {
             const isSel = !!selected[c.path];
             const info = selected[c.path];
             return (
               <label
                 key={c.path}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: isSel ? 'rgba(91,70,245,0.08)' : '#0d1520', border: `1px solid ${isSel ? 'rgba(91,70,245,0.3)' : '#182031'}`, cursor: 'pointer' }}
+                className={`mpe-row ${isSel ? 'mpe-row-selected' : 'mpe-row-unselected'}`}
               >
                 <input type="checkbox" checked={isSel} onChange={() => toggle(c)} style={{ accentColor: '#5b46f5', width: 15, height: 15, flexShrink: 0 }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 13, color: '#e6e9f0', fontWeight: 500 }}>{c.label}</div>
-                  <div style={{ fontSize: 10.5, color: '#5a6480' }}>{c.path}</div>
+                  <div className="mpe-label">{c.label}</div>
+                  <div className="mpe-path">{c.path}</div>
                 </div>
                 {info?.matchStatus === 'mismatch' && (
                   <span style={{ fontSize: 10, color: '#fca5a5', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>

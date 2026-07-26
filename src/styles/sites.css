@@ -109,6 +109,30 @@
 .sdp-tab:hover { color: #c8d0e0; }
 .sdp-tab.active { color: #5b8df5; border-bottom-color: #5b46f5; }
 
+/* ===== MONITORED PAGES CHECKLIST (Details tab) ===== */
+/* Custom thin scrollbar, same treatment as .sdp-tabs above — replaces the
+   browser's default bulky grey scrollbar. */
+.mpe-list {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #2a3448 transparent;
+}
+.mpe-list::-webkit-scrollbar { width: 6px; }
+.mpe-list::-webkit-scrollbar-track { background: transparent; }
+.mpe-list::-webkit-scrollbar-thumb { background: #2a3448; border-radius: 10px; }
+.mpe-list::-webkit-scrollbar-thumb:hover { background: #3a4560; }
+
+/* Readable text regardless of checked state — unchecked rows previously
+   used low-contrast greys (#e6e9f0 label / #5a6480 path on a near-black
+   #0d1520 row background) that looked washed out. Bump both up and give
+   checked rows a brighter label so the two states are easy to tell apart
+   at a glance. */
+.mpe-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background .12s, border-color .12s; }
+.mpe-row-unselected { background: #101a2c; border: 1px solid #212b40; }
+.mpe-row-unselected:hover { background: #131f34; border-color: #2a3650; }
+.mpe-row-selected { background: rgba(91,70,245,0.14); border: 1px solid rgba(91,70,245,0.45); }
+.mpe-label { font-size: 13px; color: #f1f3f9; font-weight: 500; }
+.mpe-path { font-size: 10.5px; color: #8b95b3; margin-top: 1px; }
+
 .sdp-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .info-item { display: flex; align-items: flex-start; gap: 7px; }
