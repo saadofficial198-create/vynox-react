@@ -255,59 +255,85 @@ function fmtCls(v) {
   return v.toFixed(3);
 }
 
+function ScoreRing({ label, val }) {
+  const color = val == null ? '#3a4356' : val >= 90 ? '#22c55e' : val >= 50 ? '#f59e0b' : '#ef4444';
+  const pct = val == null ? 0 : val;
+  const r = 22;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference * (1 - pct / 100);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 76 }}>
+      <div style={{ position: 'relative', width: 52, height: 52 }}>
+        <svg width="52" height="52" viewBox="0 0 52 52" style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx="26" cy="26" r={r} fill="none" stroke="#1a2233" strokeWidth="5" />
+          {val != null && (
+            <circle
+              cx="26" cy="26" r={r} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
+              strokeDasharray={circumference} strokeDashoffset={offset}
+              style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+            />
+          )}
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: val == null ? '#5a6480' : color }}>
+          {val ?? '—'}
+        </div>
+      </div>
+      <div style={{ fontSize: 10.5, color: '#8892a8', textAlign: 'center', lineHeight: 1.2 }}>{label}</div>
+    </div>
+  );
+}
+function VitalPill({ label, val, color, title }) {
+  return (
+    <div title={title} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, minWidth: 74, padding: '8px 4px', background: '#0d1520', borderRadius: 8, border: '1px solid #182031' }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color }}>{val}</div>
+      <div style={{ fontSize: 9.5, color: '#68718a', letterSpacing: 0.3 }}>{label}</div>
+    </div>
+  );
+}
 function PageSpeedCard({ pageLabel, pagePath, latest }) {
   const ok = latest?.ok;
   const scores = latest?.scores || {};
   const vitals = latest?.vitals || {};
   return (
-    <div className="sdp-list-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 10, padding: '14px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+    <div style={{
+      background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12,
+      padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div>
-          <div className="sdp-list-name">{pageLabel}</div>
-          <div style={{ fontSize: 10, color: '#5a6480', marginTop: 1 }}>{pagePath}</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#e6e9f0' }}>{pageLabel}</div>
+          <div style={{ fontSize: 11, color: '#5a6480', marginTop: 2 }}>{pagePath}</div>
         </div>
-        {!latest && <span style={{ fontSize: 11, color: '#5a6480' }}>Not checked yet</span>}
-        {latest && !ok && <span className="sev sev-high">Failed: {latest.error || 'unknown error'}</span>}
+        {!latest && <span style={{ fontSize: 11, color: '#5a6480', padding: '3px 9px', background: '#131b2a', borderRadius: 20 }}>Not checked yet</span>}
         {latest && ok && (
-          <div style={{ fontSize: 10, color: '#5a6480', textAlign: 'right' }}>
+          <div style={{ fontSize: 10.5, color: '#5a6480', textAlign: 'right', whiteSpace: 'nowrap' }}>
             Checked {relTime(latest.checkedAt)}
           </div>
         )}
       </div>
 
+      {latest && !ok && (
+        <div style={{ fontSize: 12, color: '#fca5a5', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px' }}>
+          Failed: {latest.error || 'unknown error'}
+        </div>
+      )}
+
       {latest && ok && (
         <>
-          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-            <ScoreStat label="Performance" val={scores.performance} />
-            <ScoreStat label="SEO" val={scores.seo} />
-            <ScoreStat label="Accessibility" val={scores.accessibility} />
-            <ScoreStat label="Best Practices" val={scores.bestPractices} />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            <ScoreRing label="Performance" val={scores.performance} />
+            <ScoreRing label="SEO" val={scores.seo} />
+            <ScoreRing label="Accessibility" val={scores.accessibility} />
+            <ScoreRing label="Best Practices" val={scores.bestPractices} />
           </div>
-          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', borderTop: '1px solid #141b27', paddingTop: 10, width: '100%' }}>
-            <VitalStat label="LCP" val={fmtMs(vitals.lcpMs)} color={metricColor(vitals.lcpMs, [2500, 4000])} title="Largest Contentful Paint" />
-            <VitalStat label="CLS" val={fmtCls(vitals.clsScore)} color={metricColor(vitals.clsScore, [0.1, 0.25])} title="Cumulative Layout Shift" />
-            <VitalStat label="FCP" val={fmtMs(vitals.fcpMs)} color={metricColor(vitals.fcpMs, [1800, 3000])} title="First Contentful Paint" />
-            <VitalStat label="TTFB" val={fmtMs(vitals.ttfbMs)} color={metricColor(vitals.ttfbMs, [800, 1800])} title="Time to First Byte" />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: '1px solid #141d2e', paddingTop: 12 }}>
+            <VitalPill label="LCP" val={fmtMs(vitals.lcpMs)} color={metricColor(vitals.lcpMs, [2500, 4000])} title="Largest Contentful Paint" />
+            <VitalPill label="CLS" val={fmtCls(vitals.clsScore)} color={metricColor(vitals.clsScore, [0.1, 0.25])} title="Cumulative Layout Shift" />
+            <VitalPill label="FCP" val={fmtMs(vitals.fcpMs)} color={metricColor(vitals.fcpMs, [1800, 3000])} title="First Contentful Paint" />
+            <VitalPill label="TTFB" val={fmtMs(vitals.ttfbMs)} color={metricColor(vitals.ttfbMs, [800, 1800])} title="Time to First Byte" />
           </div>
         </>
       )}
-    </div>
-  );
-}
-function ScoreStat({ label, val }) {
-  const color = val == null ? '#5a6480' : val >= 90 ? '#22c55e' : val >= 50 ? '#f59e0b' : '#ef4444';
-  return (
-    <div style={{ textAlign: 'center', minWidth: 64 }}>
-      <div style={{ fontSize: 18, fontWeight: 700, color }}>{val ?? '—'}</div>
-      <div style={{ fontSize: 10, color: '#7a839e', marginTop: 2 }}>{label}</div>
-    </div>
-  );
-}
-function VitalStat({ label, val, color, title }) {
-  return (
-    <div style={{ minWidth: 70 }} title={title}>
-      <div style={{ fontSize: 13, fontWeight: 600, color }}>{val}</div>
-      <div style={{ fontSize: 10, color: '#7a839e', marginTop: 2 }}>{label}</div>
     </div>
   );
 }
@@ -340,32 +366,77 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
 
   useEffect(() => { load(); }, [load]);
 
+  // On mount (including after a page reload, which wipes all React state),
+  // ask the server whether a check is already running for this site — the
+  // "checking" flag above only lives in memory, so a reload would otherwise
+  // show "Check Now" as idle even while a background run is still in
+  // progress. If one is running, start polling immediately.
+  useEffect(() => {
+    if (!siteId || checkingSites[siteId]) return;
+    api.pageSpeedStatus(siteId)
+      .then(r => { if (r.checking) setCheckingSites(prev => ({ ...prev, [siteId]: true })); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId]);
+
+  // While checkingSites[siteId] is true, poll the server every 5s to find out
+  // when the background PageSpeed run finishes, then refresh the results.
+  useEffect(() => {
+    if (!siteId || !checkingSites[siteId]) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const r = await api.pageSpeedStatus(siteId);
+        if (cancelled) return;
+        if (!r.checking) {
+          setCheckingSites(prev => ({ ...prev, [siteId]: false }));
+          load();
+        }
+      } catch { /* transient network hiccup — just try again next tick */ }
+    };
+    const interval = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [siteId, checkingSites[siteId], load, setCheckingSites]);
+
   async function runCheck() {
-    setCheckingSites(prev => ({ ...prev, [siteId]: true }));
     setError(null);
     try {
-      await api.pageSpeedCheck(siteId);
-      await new Promise(r => setTimeout(r, 0)); // let load() below read fresh state
-      if (siteId) {
-        api.pageSpeedLatest(siteId)
-          .then(r => setPagesBySite(prev => ({ ...prev, [siteId]: r.pages || [] })))
-          .catch(() => {});
-      }
-    } catch (e) { setError(e.message); }
-    finally { setCheckingSites(prev => ({ ...prev, [siteId]: false })); }
+      await api.pageSpeedCheck(siteId); // returns as soon as the run is queued (202) — does not wait for it to finish
+      setCheckingSites(prev => ({ ...prev, [siteId]: true })); // the poll effect above takes it from here
+    } catch (e) {
+      // 409 means one was already running (e.g. from another tab/device) —
+      // treat it the same as "now checking" instead of surfacing an error.
+      if (e.status === 409) setCheckingSites(prev => ({ ...prev, [siteId]: true }));
+      else setError(e.message);
+    }
   }
 
   return (
     <div className="sdp-tab-content active">
       <div className="sdp-block-head">
         <div className="sdp-block-title">Real Performance Score (Google PageSpeed)</div>
-        <button onClick={runCheck} disabled={checking} style={{ background: '#5b46f5', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: 5, fontSize: 11, cursor: checking ? 'default' : 'pointer', opacity: checking ? 0.6 : 1 }}>
-          {checking ? 'Checking… (up to ~2 min)' : 'Check Now'}
+        <button onClick={runCheck} disabled={checking} style={{
+          background: checking ? '#2a2f45' : '#5b46f5', color: checking ? '#a5b4fc' : '#fff', border: 'none',
+          padding: '6px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+          cursor: checking ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
+        }}>
+          {checking && (
+            <span style={{
+              width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(165,180,252,0.35)',
+              borderTopColor: '#a5b4fc', display: 'inline-block', animation: 'spin 0.8s linear infinite',
+            }} />
+          )}
+          {checking ? 'Checking…' : 'Check Now'}
         </button>
       </div>
+      <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
       {checking && (
-        <div style={{ padding: '8px 16px', marginBottom: 4, background: 'rgba(91,70,245,0.10)', border: '1px solid rgba(91,70,245,0.25)', borderRadius: 6, color: '#a5b4fc', fontSize: 12 }}>
-          Re-checking all pages with Google PageSpeed — this can take up to ~2 minutes per page if the site responds slowly. Scores below are the last successful check; they'll update in place when the new run finishes, even if you switch tabs or sites in the meantime.
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', marginBottom: 12, background: 'rgba(91,70,245,0.08)', border: '1px solid rgba(91,70,245,0.22)', borderRadius: 8, color: '#a5b4fc', fontSize: 12, lineHeight: 1.5 }}>
+          <span style={{ fontSize: 14 }}>⏳</span>
+          <span>
+            Re-checking all pages with Google PageSpeed — this can take a couple of minutes per page if the site responds slowly.
+            The scores below are from the last successful check and will update in place as soon as the new run finishes, even if you switch tabs or sites in the meantime.
+          </span>
         </div>
       )}
       {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
@@ -374,7 +445,7 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
         <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No pages configured. Add monitored pages first.</div>
       )}
       {!loading && pages && pages.length > 0 && (
-        <div className="sdp-list">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {pages.map(p => (
             <PageSpeedCard key={p.pageLabel} pageLabel={p.pageLabel} pagePath={p.pagePath} latest={p.latest} />
           ))}

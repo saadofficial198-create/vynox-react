@@ -30,10 +30,17 @@ export const api = {
   listScans:   ()                 => request('/api/scans'),
   listBackups: ()                 => request('/api/backups'),
 
-  // Real PageSpeed (Google) score + Core Web Vitals, per monitored page
+  // Real PageSpeed (Google) score + Core Web Vitals, per monitored page.
+  // pageSpeedCheck kicks off a BACKGROUND run and returns immediately (202) —
+  // it does not wait for the check to finish. With retries, a full check can
+  // take several minutes per page, which used to keep the HTTP request open
+  // long enough for cPanel's proxy to time it out and drop the response
+  // (the browser then misreports that as a CORS error). Poll
+  // pageSpeedStatus/pageSpeedLatest afterwards to see progress/results.
   pageSpeedLatest:  (id)          => request(`/api/pagespeed/${id}/latest`),
   pageSpeedHistory: (id, page, days = 30) => request(`/api/pagespeed/${id}/history?page=${encodeURIComponent(page)}&days=${days}`),
   pageSpeedCheck:   (id)          => request(`/api/pagespeed/${id}/check`, { method: 'POST' }),
+  pageSpeedStatus:  (id)          => request(`/api/pagespeed/${id}/status`),
 
   // Hourly/3x-daily screenshots, per monitored page
   screenshotsLatest:  (id)        => request(`/api/screenshots/${id}/latest`),
