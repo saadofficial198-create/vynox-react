@@ -312,30 +312,47 @@ function VitalStat({ label, val, color, title }) {
   );
 }
 
-function PerformanceTab({ site }) {
-  const [pages, setPages] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [checking, setChecking] = useState(false);
+// checking/pages state for the Performance tab is owned by the Sites page
+// itself (keyed per-site) rather than by this component, because the
+// sdp-body only mounts PerformanceTab while tab === 'performance' — switching
+// tabs (or selecting another site) unmounts it, which used to silently drop
+// an in-flight "Check Now" run: the button would just reset to normal even
+// though the 5-attempt PageSpeed check was still running server-side, and
+// its result would land on nothing when it finished. Lifting the state up
+// means it survives tab switches and site re-selection, so the button still
+// shows "Checking…" (and the previous scores stay visible instead of being
+// wiped) no matter what the user clicks around to in the meantime.
+function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, setPagesBySite }) {
+  const siteId = site?._id;
+  const pages = pagesBySite[siteId] ?? null;
+  const checking = !!checkingSites[siteId];
+  const [loading, setLoading] = useState(!pages);
   const [error, setError] = useState(null);
 
   const load = useCallback(() => {
-    if (!site?._id) return;
+    if (!siteId) return;
     setLoading(true);
-    api.pageSpeedLatest(site._id)
-      .then(r => setPages(r.pages || []))
+    api.pageSpeedLatest(siteId)
+      .then(r => setPagesBySite(prev => ({ ...prev, [siteId]: r.pages || [] })))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [site?._id]);
+  }, [siteId, setPagesBySite]);
 
   useEffect(() => { load(); }, [load]);
 
   async function runCheck() {
-    setChecking(true); setError(null);
+    setCheckingSites(prev => ({ ...prev, [siteId]: true }));
+    setError(null);
     try {
-      await api.pageSpeedCheck(site._id);
-      load();
+      await api.pageSpeedCheck(siteId);
+      await new Promise(r => setTimeout(r, 0)); // let load() below read fresh state
+      if (siteId) {
+        api.pageSpeedLatest(siteId)
+          .then(r => setPagesBySite(prev => ({ ...prev, [siteId]: r.pages || [] })))
+          .catch(() => {});
+      }
     } catch (e) { setError(e.message); }
-    finally { setChecking(false); }
+    finally { setCheckingSites(prev => ({ ...prev, [siteId]: false })); }
   }
 
   return (
@@ -343,9 +360,14 @@ function PerformanceTab({ site }) {
       <div className="sdp-block-head">
         <div className="sdp-block-title">Real Performance Score (Google PageSpeed)</div>
         <button onClick={runCheck} disabled={checking} style={{ background: '#5b46f5', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: 5, fontSize: 11, cursor: checking ? 'default' : 'pointer', opacity: checking ? 0.6 : 1 }}>
-          {checking ? 'Checking…' : 'Check Now'}
+          {checking ? 'Checking… (up to ~2 min)' : 'Check Now'}
         </button>
       </div>
+      {checking && (
+        <div style={{ padding: '8px 16px', marginBottom: 4, background: 'rgba(91,70,245,0.10)', border: '1px solid rgba(91,70,245,0.25)', borderRadius: 6, color: '#a5b4fc', fontSize: 12 }}>
+          Re-checking all pages with Google PageSpeed — this can take up to ~2 minutes per page if the site responds slowly. Scores below are the last successful check; they'll update in place when the new run finishes, even if you switch tabs or sites in the meantime.
+        </div>
+      )}
       {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
       {!loading && error && <div style={{ padding: 16, color: '#fca5a5', fontSize: 13 }}>{error}</div>}
       {!loading && !error && (!pages || pages.length === 0) && (
@@ -457,6 +479,20 @@ export default function Sites() {
   const [snap, setSnap] = useState(null);
   const [snapLoading, setSnapLoading] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
+
+  // PerformanceTab's "Check Now" state, lifted up here (keyed by site id) so
+  // an in-flight PageSpeed check survives switching tabs or selecting a
+  // different site — see the comment on PerformanceTab for why this matters.
+  const [checkingSites, setCheckingSites] = useState({}); // { [siteId]: boolean }
+  const [pagesBySite, setPagesBySite] = useState({}); // { [siteId]: pages[] }
+
+  const anyChecking = Object.values(checkingSites).some(Boolean);
+  useEffect(() => {
+    if (!anyChecking) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [anyChecking]);
 
   const loadSites = useCallback(async () => {
     setLoadError(null);
@@ -663,7 +699,16 @@ export default function Sites() {
                 <div className="sdp-body">
                   {/* Performance + Screenshots fetch their own data independent of the
                       connector snapshot, so they render even before a sync has run. */}
-                  {(tab === 'performance' || tab === 'screenshots') && <TabBody site={selected} snap={snap} />}
+                  {tab === 'performance' && (
+                    <PerformanceTab
+                      site={selected}
+                      checkingSites={checkingSites}
+                      setCheckingSites={setCheckingSites}
+                      pagesBySite={pagesBySite}
+                      setPagesBySite={setPagesBySite}
+                    />
+                  )}
+                  {tab === 'screenshots' && <TabBody site={selected} snap={snap} />}
                   {tab !== 'performance' && tab !== 'screenshots' && (
                     <>
                       {snapLoading && <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>Loading data…</div>}
