@@ -127,7 +127,7 @@ function InfoItem({ cls, label, val, icon }) {
   );
 }
 
-function DetailsTab({ site, snap }) {
+function DetailsTab({ site, snap, onSaved }) {
   const d = snap?.data?.site || {};
   return (
     <div className="sdp-tab-content active">
@@ -152,7 +152,7 @@ function DetailsTab({ site, snap }) {
       </div>
 
       <div style={{ marginTop: 22 }}>
-        <MonitoredPagesEditor site={site} />
+        <MonitoredPagesEditor site={site} onSaved={onSaved} />
       </div>
     </div>
   );
@@ -166,7 +166,7 @@ function DetailsTab({ site, snap }) {
 // guessed slugs is what produced misleading "Failed"/404 screenshots
 // before this existed. Supports selecting any number of pages (including
 // none of the suggested ones, or more than one page of a similar "kind").
-function MonitoredPagesEditor({ site }) {
+function MonitoredPagesEditor({ site, onSaved }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [candidates, setCandidates] = useState([]); // [{ label, path }] from the live sitemap
@@ -213,6 +213,11 @@ function MonitoredPagesEditor({ site }) {
       await api.saveMonitoredPages(site._id, pages);
       setSavedMsg('Saved — screenshots and PageSpeed checks will use this selection from the next scheduled run.');
       load();
+      // Refresh the parent Sites page's `sites` list too — otherwise the
+      // `site` object passed into Screenshots/Performance tabs still has
+      // the OLD monitoredPages until a full page reload, since this editor
+      // only updates its own local candidates/selected state above.
+      onSaved?.();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -644,6 +649,20 @@ function ScreenshotsTab({ site }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // IMPORTANT: this must re-fetch whenever the site's saved page selection
+  // changes, not just when a different site is picked. It previously
+  // depended only on site._id, so after saving a new Monitored Pages
+  // selection in the same session (site._id unchanged) this tab kept
+  // showing the stale list — e.g. selecting 2 pages still showed the old
+  // 4 boxes until a full page reload. Depending on the actual
+  // monitoredPages content (stringified, since it's an array/object and a
+  // shallow useCallback dep would still not detect in-place mutation)
+  // forces a fresh GET /screenshots/:id/latest any time the selection
+  // itself changes, in addition to switching sites.
+  const monitoredPagesKey = JSON.stringify(
+    (site?.monitoredPages || []).map(p => [p.label, p.path, p.enabled])
+  );
+
   const load = useCallback(() => {
     if (!site?._id) return;
     setLoading(true);
@@ -651,7 +670,8 @@ function ScreenshotsTab({ site }) {
       .then(r => setPages(r.pages || []))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [site?._id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site?._id, monitoredPagesKey]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -972,7 +992,14 @@ export default function Sites() {
                           No snapshot yet for this site. Data populates automatically after the next daily health check.
                         </div>
                       )}
-                      {!snapLoading && snap && <TabBody site={selected} snap={snap} />}
+                      {/* onSaved: only DetailsTab (via MonitoredPagesEditor) actually
+                          uses this — after saving a page selection, the `sites` list
+                          in THIS parent component still holds the old monitoredPages
+                          (MonitoredPagesEditor only refreshed its own local state), so
+                          Screenshots/Performance tabs kept showing stale page counts
+                          until a full reload. Re-running loadSites() here refreshes
+                          `selected`/`site` for every tab immediately after a save. */}
+                      {!snapLoading && snap && <TabBody site={selected} snap={snap} onSaved={loadSites} />}
                     </>
                   )}
                 </div>
