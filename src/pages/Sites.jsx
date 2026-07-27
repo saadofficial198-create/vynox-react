@@ -100,7 +100,7 @@ function OverviewTab({ site, snap }) {
         <InfoItem cls="ii-green"  label="Web Server" val={d.site?.server_software || '—'} icon={<><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>} />
         <InfoItem cls="ii-red"    label="Database Size" val={d.database?.db_size || '—'} icon={<><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></>} />
         <InfoItem cls="ii-purple" label="Active Theme" val={d.theme ? `${d.theme.name} ${d.theme.version || ''}`.trim() : '—'} icon={<><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></>} />
-        <div className="info-item" style={{ gridColumn: 'span 2' }}>
+        <div className="info-item">
           <div className="info-icon ii-cyan"><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
           <div><div className="info-label">Active Plugins</div><div className="info-val">{d.plugins?.active ?? '—'} of {d.plugins?.total ?? '—'}</div></div>
         </div>
