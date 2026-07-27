@@ -432,7 +432,7 @@ function ScoreRing({ label, val }) {
           {val ?? '—'}
         </div>
       </div>
-      <div style={{ fontSize: 10.5, color: '#8892a8', textAlign: 'center', lineHeight: 1.2 }}>{label}</div>
+      {label && <div style={{ fontSize: 10.5, color: '#8892a8', textAlign: 'center', lineHeight: 1.2 }}>{label}</div>}
     </div>
   );
 }
@@ -904,7 +904,7 @@ export default function Sites() {
                               already renders a dash ("—") in a neutral grey ring
                               instead of a number, which is exactly the "just tell
                               me there's no score" behavior asked for. */}
-                          <ScoreRing label="Performance" val={homePerfScores[s.id] ?? null} />
+                          <ScoreRing val={homePerfScores[s.id] ?? null} />
                         </td>
                         <td>
                           <div className={`status-cell ${s.online ? 's-online' : 's-offline'}`}>
