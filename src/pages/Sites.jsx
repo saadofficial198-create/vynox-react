@@ -584,15 +584,17 @@ function PageSpeedCard({ pageLabel, pagePath, latest }) {
 // wiped) no matter what the user clicks around to in the meantime.
 function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, setPagesBySite }) {
   const siteId = site?._id;
-  // Mobile and Desktop are checked by different triggers (manual "Check Now"
-  // = mobile, the 6-hourly scheduled job = desktop) and stored as separate
-  // PageSpeedResult documents server-side, so the frontend keeps them in
-  // separate cache slots too — switching the toggle should show whichever
-  // strategy's own last-known results, not overwrite the other one.
+  // Mobile and Desktop are independent PageSpeedResult documents server-side
+  // (see models/PageSpeedResult.js's strategy field), so the frontend keeps
+  // BOTH the results cache AND the "is a check currently running" flag keyed
+  // by siteId+strategy, not just siteId — this way "Check Now" always acts
+  // on whichever strategy is toggled, and a Mobile check running in the
+  // background doesn't block (or get confused with) a Desktop one for the
+  // same site.
   const [strategy, setStrategy] = useState('mobile');
   const cacheKey = `${siteId}:${strategy}`;
   const pages = pagesBySite[cacheKey] ?? null;
-  const checking = !!checkingSites[siteId];
+  const checking = !!checkingSites[cacheKey];
   const [loading, setLoading] = useState(!pages);
   const [error, setError] = useState(null);
 
@@ -607,47 +609,48 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
 
   useEffect(() => { load(); }, [load]);
 
-  // On mount (including after a page reload, which wipes all React state),
-  // ask the server whether a check is already running for this site — the
-  // "checking" flag above only lives in memory, so a reload would otherwise
-  // show "Check Now" as idle even while a background run is still in
-  // progress. If one is running, start polling immediately.
+  // On mount (including after a page reload, which wipes all React state) or
+  // when the toggle switches to a strategy we haven't checked yet in this
+  // session, ask the server whether a check is already running for this
+  // site+strategy — the "checking" flag above only lives in memory, so a
+  // reload would otherwise show "Check Now" as idle even while a background
+  // run is still in progress. If one is running, start polling immediately.
   useEffect(() => {
-    if (!siteId || checkingSites[siteId]) return;
-    api.pageSpeedStatus(siteId)
-      .then(r => { if (r.checking) setCheckingSites(prev => ({ ...prev, [siteId]: true })); })
+    if (!siteId || checkingSites[cacheKey]) return;
+    api.pageSpeedStatus(siteId, strategy)
+      .then(r => { if (r.checking) setCheckingSites(prev => ({ ...prev, [cacheKey]: true })); })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId]);
+  }, [siteId, strategy, cacheKey]);
 
-  // While checkingSites[siteId] is true, poll the server every 5s to find out
-  // when the background PageSpeed run finishes, then refresh the results.
+  // While checkingSites[cacheKey] is true, poll the server every 5s to find
+  // out when the background PageSpeed run finishes, then refresh the results.
   useEffect(() => {
-    if (!siteId || !checkingSites[siteId]) return;
+    if (!siteId || !checkingSites[cacheKey]) return;
     let cancelled = false;
     const poll = async () => {
       try {
-        const r = await api.pageSpeedStatus(siteId);
+        const r = await api.pageSpeedStatus(siteId, strategy);
         if (cancelled) return;
         if (!r.checking) {
-          setCheckingSites(prev => ({ ...prev, [siteId]: false }));
+          setCheckingSites(prev => ({ ...prev, [cacheKey]: false }));
           load();
         }
       } catch { /* transient network hiccup — just try again next tick */ }
     };
     const interval = setInterval(poll, 5000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [siteId, checkingSites[siteId], load, setCheckingSites]);
+  }, [siteId, strategy, cacheKey, checkingSites[cacheKey], load, setCheckingSites]);
 
   async function runCheck() {
     setError(null);
     try {
-      await api.pageSpeedCheck(siteId); // returns as soon as the run is queued (202) — does not wait for it to finish
-      setCheckingSites(prev => ({ ...prev, [siteId]: true })); // the poll effect above takes it from here
+      await api.pageSpeedCheck(siteId, strategy); // returns as soon as the run is queued (202) — does not wait for it to finish
+      setCheckingSites(prev => ({ ...prev, [cacheKey]: true })); // the poll effect above takes it from here
     } catch (e) {
       // 409 means one was already running (e.g. from another tab/device) —
       // treat it the same as "now checking" instead of surfacing an error.
-      if (e.status === 409) setCheckingSites(prev => ({ ...prev, [siteId]: true }));
+      if (e.status === 409) setCheckingSites(prev => ({ ...prev, [cacheKey]: true }));
       else setError(e.message);
     }
   }
@@ -684,7 +687,7 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
                 borderTopColor: '#a5b4fc', display: 'inline-block', animation: 'spin 0.8s linear infinite',
               }} />
             )}
-            {checking ? 'Checking…' : 'Check Now (Mobile)'}
+            {checking ? 'Checking…' : `Check Now (${strategy === 'desktop' ? 'Desktop' : 'Mobile'})`}
           </button>
         </div>
       </div>
@@ -711,7 +714,7 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
         </div>
       )}
       <div style={{ fontSize: 11, color: '#5a6480', marginTop: 10 }}>
-        Desktop scores refresh automatically every 6 hours. Mobile scores refresh when you click "Check Now". Powered by Google PageSpeed Insights.
+        Desktop scores also refresh automatically twice a day. Click "Check Now" anytime to re-check whichever strategy is selected above. Powered by Google PageSpeed Insights.
       </div>
     </div>
   );

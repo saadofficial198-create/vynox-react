@@ -39,8 +39,8 @@ export const api = {
   // pageSpeedStatus/pageSpeedLatest afterwards to see progress/results.
   pageSpeedLatest:  (id, strategy = 'mobile') => request(`/api/pagespeed/${id}/latest?strategy=${strategy}`),
   pageSpeedHistory: (id, page, days = 30, strategy = 'mobile') => request(`/api/pagespeed/${id}/history?page=${encodeURIComponent(page)}&days=${days}&strategy=${strategy}`),
-  pageSpeedCheck:   (id)          => request(`/api/pagespeed/${id}/check`, { method: 'POST' }),
-  pageSpeedStatus:  (id)          => request(`/api/pagespeed/${id}/status`),
+  pageSpeedCheck:   (id, strategy = 'mobile') => request(`/api/pagespeed/${id}/check?strategy=${strategy}`, { method: 'POST' }),
+  pageSpeedStatus:  (id, strategy = 'mobile') => request(`/api/pagespeed/${id}/status?strategy=${strategy}`),
 
   // Hourly/3x-daily screenshots, per monitored page
   screenshotsLatest:  (id)        => request(`/api/screenshots/${id}/latest`),
