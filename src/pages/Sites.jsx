@@ -104,7 +104,7 @@ function OverviewTab({ site, snap }) {
           <div className="info-icon ii-cyan"><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
           <div><div className="info-label">Active Plugins</div><div className="info-val">{d.plugins?.active ?? '—'} of {d.plugins?.total ?? '—'}</div></div>
         </div>
-        <div className="info-item" style={{ gridColumn: 'span 2' }}>
+        <div className="info-item">
           <div className={`info-icon ${agreggaPlugin?.status === 'active' ? 'ii-green' : 'ii-red'}`}><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg></div>
           <div>
             <div className="info-label">Agregga Plugin</div>
