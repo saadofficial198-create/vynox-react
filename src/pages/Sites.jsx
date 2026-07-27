@@ -752,19 +752,36 @@ export default function Sites() {
   const [homePerfScores, setHomePerfScores] = useState({}); // { [siteId]: number|null }
   useEffect(() => {
     let cancelled = false;
-    sites.forEach((s) => {
-      if (homePerfScores[s._id] !== undefined) return; // already fetched (or fetching)
-      setHomePerfScores(prev => ({ ...prev, [s._id]: null })); // mark as "fetching" so we don't re-request
-      api.pageSpeedLatest(s._id)
-        .then(r => {
-          if (cancelled) return;
-          const home = (r.pages || []).find(p => p.pageLabel === 'Home');
-          const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
-          setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
-        })
-        .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: null })); });
-    });
-    return () => { cancelled = true; };
+
+    // IMPORTANT: this used to skip any site whose score was already fetched
+    // ONCE, even if that first fetch came back null (e.g. because the
+    // PageSpeed check hadn't finished yet, or hadn't run at all when the
+    // page first loaded) — so a site's Health Status column could get
+    // permanently stuck showing "—" even after a real score existed in the
+    // database moments later, until a full page reload. Now it re-fetches
+    // every site on an interval too, not just once per site per page load,
+    // so a score that lands *after* this page was opened still shows up
+    // without needing a manual refresh.
+    function fetchAll() {
+      sites.forEach((s) => {
+        api.pageSpeedLatest(s._id)
+          .then(r => {
+            if (cancelled) return;
+            const home = (r.pages || []).find(p => p.pageLabel === 'Home');
+            const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
+            setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
+          })
+          .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
+      });
+    }
+
+    fetchAll();
+    // Re-check every 30s — cheap (one lightweight GET per site) and means a
+    // score that finishes computing after this page was opened appears on
+    // its own, matching the "dashboard should just work without me manually
+    // re-checking" expectation.
+    const interval = setInterval(fetchAll, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sites]);
 
