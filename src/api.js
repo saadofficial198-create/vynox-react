@@ -37,8 +37,8 @@ export const api = {
   // long enough for cPanel's proxy to time it out and drop the response
   // (the browser then misreports that as a CORS error). Poll
   // pageSpeedStatus/pageSpeedLatest afterwards to see progress/results.
-  pageSpeedLatest:  (id)          => request(`/api/pagespeed/${id}/latest`),
-  pageSpeedHistory: (id, page, days = 30) => request(`/api/pagespeed/${id}/history?page=${encodeURIComponent(page)}&days=${days}`),
+  pageSpeedLatest:  (id, strategy = 'mobile') => request(`/api/pagespeed/${id}/latest?strategy=${strategy}`),
+  pageSpeedHistory: (id, page, days = 30, strategy = 'mobile') => request(`/api/pagespeed/${id}/history?page=${encodeURIComponent(page)}&days=${days}&strategy=${strategy}`),
   pageSpeedCheck:   (id)          => request(`/api/pagespeed/${id}/check`, { method: 'POST' }),
   pageSpeedStatus:  (id)          => request(`/api/pagespeed/${id}/status`),
 

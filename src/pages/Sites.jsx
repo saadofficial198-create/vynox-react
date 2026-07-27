@@ -584,7 +584,14 @@ function PageSpeedCard({ pageLabel, pagePath, latest }) {
 // wiped) no matter what the user clicks around to in the meantime.
 function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, setPagesBySite }) {
   const siteId = site?._id;
-  const pages = pagesBySite[siteId] ?? null;
+  // Mobile and Desktop are checked by different triggers (manual "Check Now"
+  // = mobile, the 6-hourly scheduled job = desktop) and stored as separate
+  // PageSpeedResult documents server-side, so the frontend keeps them in
+  // separate cache slots too — switching the toggle should show whichever
+  // strategy's own last-known results, not overwrite the other one.
+  const [strategy, setStrategy] = useState('mobile');
+  const cacheKey = `${siteId}:${strategy}`;
+  const pages = pagesBySite[cacheKey] ?? null;
   const checking = !!checkingSites[siteId];
   const [loading, setLoading] = useState(!pages);
   const [error, setError] = useState(null);
@@ -592,11 +599,11 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
   const load = useCallback(() => {
     if (!siteId) return;
     setLoading(true);
-    api.pageSpeedLatest(siteId)
-      .then(r => setPagesBySite(prev => ({ ...prev, [siteId]: r.pages || [] })))
+    api.pageSpeedLatest(siteId, strategy)
+      .then(r => setPagesBySite(prev => ({ ...prev, [cacheKey]: r.pages || [] })))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [siteId, setPagesBySite]);
+  }, [siteId, strategy, cacheKey, setPagesBySite]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -649,19 +656,37 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
     <div className="sdp-tab-content active">
       <div className="sdp-block-head">
         <div className="sdp-block-title">Real Performance Score (Google PageSpeed)</div>
-        <button onClick={runCheck} disabled={checking} style={{
-          background: checking ? '#2a2f45' : '#5b46f5', color: checking ? '#a5b4fc' : '#fff', border: 'none',
-          padding: '6px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
-          cursor: checking ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
-        }}>
-          {checking && (
-            <span style={{
-              width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(165,180,252,0.35)',
-              borderTopColor: '#a5b4fc', display: 'inline-block', animation: 'spin 0.8s linear infinite',
-            }} />
-          )}
-          {checking ? 'Checking…' : 'Check Now'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', background: '#0d1520', border: '1px solid #1a2333', borderRadius: 7, padding: 2 }}>
+            {['mobile', 'desktop'].map(s => (
+              <button
+                key={s}
+                onClick={() => setStrategy(s)}
+                style={{
+                  background: strategy === s ? '#5b46f5' : 'transparent',
+                  color: strategy === s ? '#fff' : '#7a839e',
+                  border: 'none', borderRadius: 5, padding: '5px 12px', fontSize: 11.5, fontWeight: 600,
+                  cursor: 'pointer', textTransform: 'capitalize',
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <button onClick={runCheck} disabled={checking} style={{
+            background: checking ? '#2a2f45' : '#5b46f5', color: checking ? '#a5b4fc' : '#fff', border: 'none',
+            padding: '6px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+            cursor: checking ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
+          }}>
+            {checking && (
+              <span style={{
+                width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(165,180,252,0.35)',
+                borderTopColor: '#a5b4fc', display: 'inline-block', animation: 'spin 0.8s linear infinite',
+              }} />
+            )}
+            {checking ? 'Checking…' : 'Check Now (Mobile)'}
+          </button>
+        </div>
       </div>
       <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
       {checking && (
@@ -686,7 +711,7 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
         </div>
       )}
       <div style={{ fontSize: 11, color: '#5a6480', marginTop: 10 }}>
-        Scores refresh automatically every 6 hours. Mobile strategy, powered by Google PageSpeed Insights.
+        Desktop scores refresh automatically every 6 hours. Mobile scores refresh when you click "Check Now". Powered by Google PageSpeed Insights.
       </div>
     </div>
   );
