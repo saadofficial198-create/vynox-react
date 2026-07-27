@@ -86,6 +86,16 @@ export default function Dashboard() {
     return { totalSites: sites.length, good, warning, critical, needsAttention, totalAlerts: alerts.length, high, med, low, scans7d, backupsOk: backups.summary?.success || 0 };
   }, [sites, alerts, scans, backups]);
 
+  // Per-site active-alert count for the Sites Overview table below. GET
+  // /api/alerts (already fetched into `alerts`) returns one row per active
+  // alert with a siteId on it — not a per-site total — so tally it here
+  // instead of reading a site.latest.alerts field that never existed.
+  const siteAlertCounts = useMemo(() => {
+    const counts = {};
+    alerts.forEach((a) => { counts[a.siteId] = (counts[a.siteId] || 0) + 1; });
+    return counts;
+  }, [alerts]);
+
   const STAT_CARDS = [
     { iconCls: 'si-blue',    icon: <><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>, label: 'Total Sites', value: stats.totalSites, sub: 'All Connected Sites', sparkId: 'grad-3b82f6', color: '#3b82f6', points: '2,22 12,18 22,20 32,14 42,16 52,12 66,14' },
     { iconCls: stats.needsAttention === 0 ? 'si-green' : 'si-red', icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></>, label: 'Sites Needing Attention', value: stats.needsAttention, sub: `${stats.good} Good · ${stats.warning} Warning · ${stats.critical} Critical`, subCls: stats.needsAttention === 0 ? 'green' : 'red', sparkId: 'grad-22c55e', color: stats.needsAttention === 0 ? '#22c55e' : '#ef4444', points: '2,22 12,18 22,20 32,14 42,16 52,10 66,8' },
@@ -162,8 +172,16 @@ export default function Dashboard() {
                 {!loading && sitesTop5.length === 0 && (<tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#7a839e' }}>No sites yet — add one in Sites page.</td></tr>)}
                 {!loading && sitesTop5.map((s) => {
                   const status = s.latest?.status;
-                  const alerts = s.latest?.alerts ?? 0;
-                  const upd = s.latest?.updates ?? 0;
+                  // NOTE: site.latest (deriveHealthStatus's payload) has no
+                  // "alerts" field — that always read as undefined -> 0
+                  // here, showing every site's Alerts column as 0 even when
+                  // the Alerts page clearly listed active alerts for it.
+                  // The real per-site active-alert count is tallied from
+                  // GET /api/alerts (fetched into siteAlertCounts below),
+                  // same fix as Sites.jsx's rowFor(). Also: the field is
+                  // "updatesAvailable", not "updates".
+                  const alerts = siteAlertCounts[s._id] ?? 0;
+                  const upd = s.latest?.updatesAvailable ?? 0;
                   return (
                     <tr key={s._id}>
                       <td>

@@ -40,13 +40,20 @@ function PerfScoreChip({ score }) {
   );
 }
 
-function rowFor(site) {
+function rowFor(site, alertCounts) {
   const l = site.latest || {};
   return {
     id: site._id, name: site.name, sub: site.url,
     status: l.status ?? null, statusLabel: l.label ?? null,
     online: site.status === 'online',
-    alerts: l.alerts ?? null,
+    // NOTE: Site.latest (the deriveHealthStatus payload) has never had an
+    // "alerts" field — reading l.alerts always returned undefined, which is
+    // why this column showed "—" for every site even when the Alerts tab
+    // clearly listed active alerts. The real active-alert count only exists
+    // via GET /api/alerts (one row per active alert, each carrying a
+    // siteId) — see alertCounts, built once per render from that response
+    // and passed in here instead of trying to read it off site.latest.
+    alerts: alertCounts && Object.prototype.hasOwnProperty.call(alertCounts, site._id) ? alertCounts[site._id] : null,
     // NOTE: the health-status payload's field is "updatesAvailable", not
     // "updates" — this used to read l.updates (always undefined), which is
     // why the Updates column showed "—" for every site even when the
@@ -734,6 +741,31 @@ export default function Sites() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [anyChecking]);
 
+  // Active-alert count per site, for the "Alerts" column in the All Sites
+  // table. GET /api/alerts returns one row per currently-active alert
+  // (across every site, each carrying a siteId) — not a per-site count — so
+  // we fetch it once and tally it into { [siteId]: count } ourselves. This
+  // used to be read off site.latest.alerts, a field that never existed,
+  // which is why the column always showed "—".
+  const [alertCounts, setAlertCounts] = useState(null); // null = not loaded yet
+  const loadAlertCounts = useCallback(() => {
+    api.listAlerts()
+      .then((r) => {
+        const counts = {};
+        (r.alerts || []).forEach((a) => { counts[a.siteId] = (counts[a.siteId] || 0) + 1; });
+        setAlertCounts(counts);
+      })
+      .catch(() => {}); // leave alertCounts as-is (or null) — column falls back to "—"
+  }, []);
+  useEffect(() => {
+    loadAlertCounts();
+    // Refresh periodically too, same reasoning as homePerfScores below —
+    // alerts can change (new one detected, one resolved) without the user
+    // reloading the page.
+    const interval = setInterval(loadAlertCounts, 30000);
+    return () => clearInterval(interval);
+  }, [loadAlertCounts]);
+
   const loadSites = useCallback(async () => {
     setLoadError(null);
     try {
@@ -812,7 +844,7 @@ export default function Sites() {
     } catch (e) { alert('Delete failed: ' + e.message); }
   }
 
-  const rows = sites.map(rowFor);
+  const rows = sites.map((s) => rowFor(s, alertCounts));
   const filteredRows = rows.filter(r => {
     if (status === 'Online'  && !r.online) return false;
     if (status === 'Offline' && r.online)  return false;
@@ -822,7 +854,7 @@ export default function Sites() {
   });
 
   const selected = sites.find(s => s._id === selectedId) || null;
-  const selectedRow = selected ? rowFor(selected) : null;
+  const selectedRow = selected ? rowFor(selected, alertCounts) : null;
   const TabBody = TAB_BODIES[tab];
 
   return (
