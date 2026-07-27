@@ -86,16 +86,20 @@ export default function Dashboard() {
   // "Health Status" column — same fix as Sites.jsx's homePerfScores: this
   // column used to show the old "Needs Attention"/"Good" health-check
   // badge, but the user wants the SAME score ring shown on the site's own
-  // Performance tab here too, everywhere the health status appears. Fetched
-  // separately (one lightweight GET per site) and re-checked periodically
-  // so a score that finishes computing after this page loads still shows
-  // up without a manual refresh.
+  // Performance tab here too, everywhere the health status appears. Uses
+  // the 'desktop' strategy specifically — Desktop is the one refreshed
+  // automatically (6-hourly internal job + the daily GitHub Actions
+  // pagespeed-desktop.yml workflow), so every list-style "Health Status"
+  // column always has a fresh score without anyone needing to click
+  // "Check Now" first. Fetched separately (one lightweight GET per site)
+  // and re-checked periodically so a score that finishes computing after
+  // this page loads still shows up without a manual refresh.
   const [homePerfScores, setHomePerfScores] = useState({});
   useEffect(() => {
     let cancelled = false;
     function fetchAll() {
       sites.forEach((s) => {
-        api.pageSpeedLatest(s._id)
+        api.pageSpeedLatest(s._id, 'desktop')
           .then(r => {
             if (cancelled) return;
             const home = (r.pages || []).find(p => p.pageLabel === 'Home');

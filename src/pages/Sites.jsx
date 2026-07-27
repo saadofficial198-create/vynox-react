@@ -965,7 +965,10 @@ export default function Sites() {
     // without needing a manual refresh.
     function fetchAll() {
       sites.forEach((s) => {
-        api.pageSpeedLatest(s._id)
+        // 'desktop' — the strategy that's kept fresh automatically (6-hourly
+        // internal job + daily pagespeed-desktop.yml workflow), so this
+        // list column always has a score without needing "Check Now" first.
+        api.pageSpeedLatest(s._id, 'desktop')
           .then(r => {
             if (cancelled) return;
             const home = (r.pages || []).find(p => p.pageLabel === 'Home');
