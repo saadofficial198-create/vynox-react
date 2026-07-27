@@ -872,7 +872,11 @@ export default function Sites() {
         </div></div>
         <div className="stat-card"><div className="stat-card-top">
           <div className="stat-icon si-orange"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-          <div className="stat-text"><div className="stat-label">Sites with Alerts</div><div className="stat-value">{sites.filter(s => (s.latest?.alerts || 0) > 0).length}</div><div className="stat-sub red">Have active alerts</div></div>
+          {/* NOTE: site.latest has no "alerts" field (same bug as the table's
+              Alerts column) — the real per-site count comes from
+              alertCounts, tallied from GET /api/alerts (see the effect
+              near loadAlertCounts above). */}
+          <div className="stat-text"><div className="stat-label">Sites with Alerts</div><div className="stat-value">{sites.filter(s => ((alertCounts && alertCounts[s._id]) || 0) > 0).length}</div><div className="stat-sub red">Have active alerts</div></div>
           <div className="stat-sparkline"><Sparkline id="s-g3" color="#ef4444" points="2,14 12,18 22,12 32,20 42,10 52,16 66,13" /></div>
         </div></div>
         <div className="stat-card"><div className="stat-card-top">
