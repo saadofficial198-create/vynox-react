@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
-import HealthBadge from '../components/HealthBadge';
+import ScoreRing from '../components/ScoreRing';
+import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
 import '../styles/dashboard.css';
 
@@ -18,24 +19,9 @@ function Sparkline({ id, color, points }) {
 function alertCls(n) { return n === 0 ? 'an-green' : n >= 6 ? 'an-red' : 'an-orange'; }
 function updCls(n)   { return n === 0 ? 'upd-gray' : 'upd-orange'; }
 
-// Maps OtpCheck.overallStatus to a badge style (reusing the existing
-// hs-good/hs-warning/hs-critical/hs-unknown health-badge color classes) and
-// a one-line human-readable reason, so a failure is diagnosable at a glance.
-const OTP_STATUS_META = {
-  pass:                       { label: 'Working',                       cls: 'hs-good',     reason: null },
-  not_applicable:             { label: 'N/A',                           cls: 'hs-unknown',  reason: 'OTP plugin not active on this site' },
-  fail_plugin_inactive:       { label: 'Failed',                        cls: 'hs-critical', reason: 'OTP or WP Mail SMTP plugin is inactive' },
-  fail_smtp_not_configured:   { label: 'Failed',                        cls: 'hs-critical', reason: 'WP Mail SMTP is not configured' },
-  fail_checkout_trigger:      { label: 'Failed',                        cls: 'hs-critical', reason: 'Checkout did not trigger the OTP popup' },
-  fail_email_not_received:    { label: 'Failed',                        cls: 'hs-critical', reason: 'Email not received (checkout works)' },
-  error:                      { label: 'Error',                         cls: 'hs-warning',  reason: 'Check could not complete — see logs' },
-};
-function otpStatusMeta(status) {
-  return OTP_STATUS_META[status] || { label: 'Not yet checked', cls: 'hs-unknown', reason: null };
-}
 function otpDotCls(check) {
   if (!check) return 'hs-unknown';
-  return otpStatusMeta(check.overallStatus).cls;
+  return otpStatusMeta(check).cls;
 }
 function relTime(iso) {
   if (!iso) return 'Never';
@@ -95,6 +81,34 @@ export default function Dashboard() {
     alerts.forEach((a) => { counts[a.siteId] = (counts[a.siteId] || 0) + 1; });
     return counts;
   }, [alerts]);
+
+  // Home-page PageSpeed Performance score for the Sites Overview table's
+  // "Health Status" column — same fix as Sites.jsx's homePerfScores: this
+  // column used to show the old "Needs Attention"/"Good" health-check
+  // badge, but the user wants the SAME score ring shown on the site's own
+  // Performance tab here too, everywhere the health status appears. Fetched
+  // separately (one lightweight GET per site) and re-checked periodically
+  // so a score that finishes computing after this page loads still shows
+  // up without a manual refresh.
+  const [homePerfScores, setHomePerfScores] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    function fetchAll() {
+      sites.forEach((s) => {
+        api.pageSpeedLatest(s._id)
+          .then(r => {
+            if (cancelled) return;
+            const home = (r.pages || []).find(p => p.pageLabel === 'Home');
+            const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
+            setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
+          })
+          .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
+      });
+    }
+    if (sites.length) fetchAll();
+    const interval = setInterval(fetchAll, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [sites]);
 
   const STAT_CARDS = [
     { iconCls: 'si-blue',    icon: <><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>, label: 'Total Sites', value: stats.totalSites, sub: 'All Connected Sites', sparkId: 'grad-3b82f6', color: '#3b82f6', points: '2,22 12,18 22,20 32,14 42,16 52,12 66,14' },
@@ -171,7 +185,6 @@ export default function Dashboard() {
                 {loading && (<tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#7a839e' }}>Loading…</td></tr>)}
                 {!loading && sitesTop5.length === 0 && (<tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#7a839e' }}>No sites yet — add one in Sites page.</td></tr>)}
                 {!loading && sitesTop5.map((s) => {
-                  const status = s.latest?.status;
                   // NOTE: site.latest (deriveHealthStatus's payload) has no
                   // "alerts" field — that always read as undefined -> 0
                   // here, showing every site's Alerts column as 0 even when
@@ -190,7 +203,11 @@ export default function Dashboard() {
                           <div><div className="site-name">{s.name}</div><div className="site-sub">{(s.url || '').replace(/^https?:\/\//, '')}</div></div>
                         </div>
                       </td>
-                      <td>{status ? <HealthBadge status={status} label={s.latest?.label} /> : <span style={{ color: '#5a6480', fontSize: 12 }}>—</span>}</td>
+                      {/* Same treatment as Sites.jsx's All Sites table — this must
+                          NEVER fall back to the "Needs Attention" health-check
+                          badge (per explicit user request); ScoreRing itself
+                          renders a neutral "—" ring when no score exists yet. */}
+                      <td><ScoreRing val={homePerfScores[s._id] ?? null} /></td>
                       <td><span className={`alert-num ${alertCls(alerts)}`}>{alerts}</span></td>
                       <td>
                         <div className="lastscan-main">{relTime(s.lastSyncedAt)}</div>
@@ -219,7 +236,7 @@ export default function Dashboard() {
                 <div style={{ color: '#7a839e', fontSize: 13 }}>No OTP checks recorded yet.</div>
               )}
               {!otpLoading && otpChecks.map((check) => {
-                const meta = otpStatusMeta(check.overallStatus);
+                const meta = otpStatusMeta(check);
                 return (
                   <div key={check._id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(90,100,128,0.15)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

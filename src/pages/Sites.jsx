@@ -5,7 +5,9 @@ import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import AddSiteModal from '../components/AddSiteModal';
 import HealthBadge from '../components/HealthBadge';
+import ScoreRing from '../components/ScoreRing';
 import { healthStatusMeta } from '../healthStatus';
+import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
 import '../styles/sites.css';
 
@@ -514,33 +516,6 @@ function fmtCls(v) {
   return v.toFixed(3);
 }
 
-function ScoreRing({ label, val }) {
-  const color = val == null ? '#3a4356' : val >= 90 ? '#22c55e' : val >= 50 ? '#f59e0b' : '#ef4444';
-  const pct = val == null ? 0 : val;
-  const r = 22;
-  const circumference = 2 * Math.PI * r;
-  const offset = circumference * (1 - pct / 100);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 76 }}>
-      <div style={{ position: 'relative', width: 52, height: 52 }}>
-        <svg width="52" height="52" viewBox="0 0 52 52" style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx="26" cy="26" r={r} fill="none" stroke="#1a2233" strokeWidth="5" />
-          {val != null && (
-            <circle
-              cx="26" cy="26" r={r} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
-              strokeDasharray={circumference} strokeDashoffset={offset}
-              style={{ transition: 'stroke-dashoffset 0.6s ease' }}
-            />
-          )}
-        </svg>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: val == null ? '#5a6480' : color }}>
-          {val ?? '—'}
-        </div>
-      </div>
-      {label && <div style={{ fontSize: 10.5, color: '#8892a8', textAlign: 'center', lineHeight: 1.2 }}>{label}</div>}
-    </div>
-  );
-}
 function VitalPill({ label, val, color, title }) {
   return (
     <div title={title} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, minWidth: 74, padding: '8px 4px', background: '#0d1520', borderRadius: 8, border: '1px solid #182031' }}>
@@ -804,7 +779,75 @@ function ScreenshotsTab({ site }) {
   );
 }
 
-const TAB_BODIES = { overview: OverviewTab, details: DetailsTab, alerts: AlertsTab, scans: ScansTab, backups: BackupsTab, updates: UpdatesTab, performance: PerformanceTab, screenshots: ScreenshotsTab };
+// Per-site OTP delivery-check history — a running list of every check that
+// has run for THIS site (2x/day, see .github/workflows/otp-check.yml),
+// showing when it ran and whether it passed, failed, or was blocked by the
+// site's own Imunify360 firewall. Fetches independently of the connector
+// snapshot (like Performance/Screenshots tabs), since OTP checks don't
+// depend on the daily security scan having run.
+function OtpCheckerTab({ site }) {
+  const [checks, setChecks] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(() => {
+    if (!site?._id) return;
+    setLoading(true); setError(null);
+    api.otpCheckHistory(90, site._id)
+      .then(r => setChecks(r.checks || []))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [site?._id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="sdp-tab-content active">
+      <div className="sdp-block-head">
+        <div className="sdp-block-title">OTP Email Delivery Checks</div>
+      </div>
+      <div style={{ fontSize: 11.5, color: '#7a839e', margin: '0 0 12px' }}>
+        Runs automatically 2x/day (~12:00 AM and ~12:00 PM PKT) — verifies this site's checkout OTP email actually gets delivered, end to end. A "Blocked (Imunify360)" result means the site's own hosting firewall rejected the check as bot traffic, not that OTP delivery itself is broken — see the Imunify360 Allowlist Status card in the Details tab to resolve it.
+      </div>
+
+      {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
+      {!loading && error && <div style={{ padding: 16, color: '#fca5a5', fontSize: 13 }}>{error}</div>}
+      {!loading && !error && (!checks || checks.length === 0) && (
+        <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No OTP checks recorded yet for this site.</div>
+      )}
+
+      {!loading && checks && checks.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {checks.map((c) => {
+            const meta = otpStatusMeta(c);
+            const badgeColor = meta.cls === 'hs-good' ? '#22c55e' : meta.cls === 'hs-critical' ? '#ef4444' : meta.cls === 'hs-warning' ? '#f59e0b' : '#7a839e';
+            const badgeBg = meta.cls === 'hs-good' ? 'rgba(34,197,94,0.1)' : meta.cls === 'hs-critical' ? 'rgba(239,68,68,0.1)' : meta.cls === 'hs-warning' ? 'rgba(245,158,11,0.1)' : 'rgba(122,131,158,0.1)';
+            return (
+              <div key={c._id} style={{ padding: '10px 12px', borderRadius: 8, background: '#0d1520', border: '1px solid #182031' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12.5, color: '#e6e9f0', minWidth: 150 }}>
+                    {c.checkedAt ? new Date(c.checkedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown time'}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}33`, borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' }}>
+                    {meta.label}
+                  </span>
+                  {c.overallStatus === 'pass' && typeof c.deliveryLatencyMs === 'number' && (
+                    <span style={{ fontSize: 11.5, color: '#22c55e' }}>Delivered in {(c.deliveryLatencyMs / 1000).toFixed(1)}s</span>
+                  )}
+                </div>
+                {meta.reason && (
+                  <div style={{ marginTop: 5, fontSize: 11.5, color: '#8892a8' }}>{meta.reason}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TAB_BODIES = { overview: OverviewTab, details: DetailsTab, alerts: AlertsTab, scans: ScansTab, backups: BackupsTab, updates: UpdatesTab, performance: PerformanceTab, screenshots: ScreenshotsTab, otp: OtpCheckerTab };
 
 export default function Sites() {
   const { setPageClass } = usePage();
@@ -1116,14 +1159,16 @@ export default function Sites() {
                     { key: 'updates',  label: <>Updates {selectedRow?.upd > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}>({selectedRow.upd})</span>}</> },
                     { key: 'performance', label: 'Performance' },
                     { key: 'screenshots', label: 'Screenshots' },
+                    { key: 'otp', label: 'OTP Checker' },
                   ].map(t => (
                     <div key={t.key} className={`sdp-tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</div>
                   ))}
                 </div>
 
                 <div className="sdp-body">
-                  {/* Performance + Screenshots fetch their own data independent of the
-                      connector snapshot, so they render even before a sync has run. */}
+                  {/* Performance + Screenshots + OTP Checker all fetch their own data
+                      independent of the connector snapshot, so they render even
+                      before a daily security scan has run. */}
                   {tab === 'performance' && (
                     <PerformanceTab
                       site={selected}
@@ -1134,7 +1179,8 @@ export default function Sites() {
                     />
                   )}
                   {tab === 'screenshots' && <TabBody site={selected} snap={snap} />}
-                  {tab !== 'performance' && tab !== 'screenshots' && (
+                  {tab === 'otp' && <OtpCheckerTab site={selected} />}
+                  {tab !== 'performance' && tab !== 'screenshots' && tab !== 'otp' && (
                     <>
                       {snapLoading && <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>Loading data…</div>}
                       {!snapLoading && !snap && (

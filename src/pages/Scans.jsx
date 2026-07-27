@@ -3,7 +3,7 @@ import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
-import HealthBadge from '../components/HealthBadge';
+import ScoreRing from '../components/ScoreRing';
 import { api } from '../api';
 import '../styles/scans.css';
 
@@ -43,6 +43,29 @@ export default function Scans() {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  // Home-page PageSpeed Performance score per site, for the Health Status
+  // column — same ScoreRing shared with Dashboard.jsx and Sites.jsx, polled
+  // every 30s so it fills in once a check completes (not just on load).
+  const [homePerfScores, setHomePerfScores] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    function fetchAll() {
+      sites.forEach((s) => {
+        api.pageSpeedLatest(s._id)
+          .then(r => {
+            if (cancelled) return;
+            const home = (r.pages || []).find(p => p.pageLabel === 'Home');
+            const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
+            setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
+          })
+          .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
+      });
+    }
+    if (sites.length) fetchAll();
+    const interval = setInterval(fetchAll, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [sites]);
 
   const counts = useMemo(() => {
     const c = { total: scans.length, completed: 0, failed: 0, suspicious: 0, totalFiles: 0 };
@@ -189,7 +212,7 @@ export default function Scans() {
                       <td><div className="date-main">{dm}</div><div className="date-time">{dt}</div></td>
                       <td>{s.filesScanned > 0 ? <span className="duration-val">{s.filesScanned}</span> : <span className="duration-empty">—</span>}</td>
                       <td>{s.suspicious > 0 ? <span className="sev sev-high">{s.suspicious}</span> : <span style={{ color: '#22c55e', fontWeight: 600 }}>Clean</span>}</td>
-                      <td>{s.healthStatus ? <HealthBadge status={s.healthStatus} label={s.healthLabel} /> : <span className="duration-empty">—</span>}</td>
+                      <td><ScoreRing val={homePerfScores[s.siteId] ?? null} /></td>
                     </tr>
                   );
                 })}
