@@ -62,4 +62,10 @@ export const api = {
   // Returns one row per registered site — not tied to any single site.
   otpCheckLatest:  ()                        => request('/api/otp-check/latest'),
   otpCheckHistory: (days = 30, siteId = null) => request(`/api/otp-check/history?days=${days}${siteId ? `&siteId=${siteId}` : ''}`),
+
+  // Imunify360 allowlist tracking (per-site, see models/Site.js's
+  // imunify360Status). scripts/runOtpCheck.js auto-sets 'blocked'; the user
+  // manually confirms 'allowlisted' here after fixing it in that site's own
+  // cPanel — see Imunify360_Allowlist_Guide.md.
+  setImunify360Status: (id, status) => request(`/api/sites/${id}/imunify360-status`, { method: 'PUT', body: JSON.stringify({ status }) }),
 };

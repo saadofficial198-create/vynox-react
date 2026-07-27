@@ -183,6 +183,82 @@ function DetailsTab({ site, snap, onSaved }) {
       <div style={{ marginTop: 22 }}>
         <MonitoredPagesEditor site={site} onSaved={onSaved} />
       </div>
+
+      <div style={{ marginTop: 22 }}>
+        <Imunify360StatusCard site={site} onSaved={onSaved} />
+      </div>
+    </div>
+  );
+}
+
+// Tracks whether THIS site's own hosting server has allowlisted our
+// X-Vynox-Bot header in Imunify360 (or similar bot-protection). This is a
+// per-SERVER setting — see models/Site.js's comment on imunify360Status —
+// so every site needs this checked/fixed independently, even if another
+// site's server is already allowlisted. scripts/runOtpCheck.js auto-detects
+// "blocked" from a real failed request; the user manually confirms
+// "allowlisted" here after fixing it in that site's cPanel (see
+// Imunify360_Allowlist_Guide.md for the exact steps).
+function Imunify360StatusCard({ site, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const status = site.imunify360Status || 'unknown';
+
+  const META = {
+    unknown:     { label: 'Not checked yet', color: '#7a839e', bg: 'rgba(122,131,158,0.08)', border: 'rgba(122,131,158,0.25)' },
+    blocked:     { label: 'Blocked by Imunify360', color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.25)' },
+    allowlisted: { label: 'Allowlisted', color: '#22c55e', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.25)' },
+  };
+  const meta = META[status] || META.unknown;
+
+  async function markAllowlisted() {
+    setSaving(true); setError(null);
+    try {
+      await api.setImunify360Status(site._id, 'allowlisted');
+      onSaved?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#e6e9f0' }}>Imunify360 Allowlist Status</div>
+          <div style={{ fontSize: 11.5, color: '#7a839e', marginTop: 2 }}>
+            Whether THIS site's own hosting server allows our automated OTP delivery check through its firewall. This is per-server — fixing it for one site does not fix another site on a different server.
+          </div>
+        </div>
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: meta.color, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: 20, padding: '4px 12px', whiteSpace: 'nowrap' }}>
+          {meta.label}
+        </span>
+      </div>
+
+      {status === 'blocked' && (
+        <div style={{ marginTop: 10, fontSize: 12, color: '#fca5a5', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.5 }}>
+          Our last OTP check on this site was rejected by its Imunify360 firewall as bot traffic. Log into <b>this site's own cPanel</b> → Imunify360 → WAF → Additional Rules/Allowlist, and add a rule allowing requests carrying the <code>X-Vynox-Bot</code> header (see <code>Imunify360_Allowlist_Guide.md</code> for the exact secret value and steps). Once done, click the button below.
+        </div>
+      )}
+
+      {error && <div style={{ marginTop: 8, fontSize: 12, color: '#fca5a5' }}>{error}</div>}
+
+      {status !== 'allowlisted' && (
+        <button
+          onClick={markAllowlisted}
+          disabled={saving}
+          style={{ marginTop: 10, background: saving ? '#2a2f45' : '#5b46f5', color: '#fff', border: 'none', padding: '7px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}
+        >
+          {saving ? 'Saving…' : "I've added the allowlist rule — mark resolved"}
+        </button>
+      )}
+      {status === 'allowlisted' && (
+        <div style={{ marginTop: 10, fontSize: 12, color: '#7a839e' }}>
+          Marked as allowlisted on {site.imunify360CheckedAt ? new Date(site.imunify360CheckedAt).toLocaleString() : 'unknown date'}. If OTP checks still fail with an Imunify360 error, the rule may need re-checking.
+        </div>
+      )}
     </div>
   );
 }
