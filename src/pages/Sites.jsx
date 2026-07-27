@@ -75,6 +75,14 @@ function OverviewTab({ site, snap }) {
 
   const periodDays = period === 'Last 30 Days' ? 30 : period === 'Last 90 Days' ? 90 : 7;
 
+  // "Agregga" is VYNOX's own connector-adjacent plugin (the payment plugin
+  // installed alongside vynox-connector.php on every client site) — the
+  // full plugin list with per-plugin active/inactive status already comes
+  // through in d.plugins.plugins (see vynox-connector.php's
+  // vynox_get_plugins_info()), so no backend/plugin change is needed here,
+  // just picking it out of the existing list for its own status row.
+  const agreggaPlugin = (d.plugins?.plugins || []).find(p => (p.name || '').trim().toLowerCase() === 'agregga');
+
   useEffect(() => {
     if (!site?._id) return;
     api.siteHistory(site._id, periodDays)
@@ -95,6 +103,20 @@ function OverviewTab({ site, snap }) {
         <div className="info-item" style={{ gridColumn: 'span 2' }}>
           <div className="info-icon ii-cyan"><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
           <div><div className="info-label">Active Plugins</div><div className="info-val">{d.plugins?.active ?? '—'} of {d.plugins?.total ?? '—'}</div></div>
+        </div>
+        <div className="info-item" style={{ gridColumn: 'span 2' }}>
+          <div className={`info-icon ${agreggaPlugin?.status === 'active' ? 'ii-green' : 'ii-red'}`}><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <div>
+            <div className="info-label">Agregga Plugin</div>
+            <div className="info-val">
+              {!agreggaPlugin
+                ? 'Not installed'
+                : agreggaPlugin.status === 'active'
+                  ? <span style={{ color: '#22c55e' }}>Active {agreggaPlugin.version ? `(v${agreggaPlugin.version})` : ''}</span>
+                  : <span style={{ color: '#ef4444' }}>Inactive {agreggaPlugin.version ? `(v${agreggaPlugin.version})` : ''}</span>
+              }
+            </div>
+          </div>
         </div>
       </div>
 
