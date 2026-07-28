@@ -642,7 +642,23 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
     return () => { cancelled = true; clearInterval(interval); };
   }, [siteId, strategy, cacheKey, checkingSites[cacheKey], load, setCheckingSites]);
 
+  // At least one monitored page must be selected AND actually checkable
+  // (not disabled, not currently mismatched against the live sitemap) before
+  // "Check Now" is allowed to run — this mirrors the exact same filter the
+  // backend applies in services/pagespeed.js's checkSitePageSpeed
+  // (p.enabled !== false && p.matchStatus !== 'mismatch'). Without this, a
+  // freshly-added site where nobody has opened Settings > Monitored Pages
+  // yet would let the user click "Check Now" immediately, which the backend
+  // would just reject with a 409 ("pages not configured yet") anyway — this
+  // catches that earlier, in the UI, with a clearer message and a disabled
+  // button instead of a confusing error after the click.
+  const hasCheckablePage = !!pages && pages.some(p => p.enabled !== false && p.matchStatus !== 'mismatch');
+
   async function runCheck() {
+    if (!hasCheckablePage) {
+      setError('No monitored pages are selected for this site yet. Go to the Details tab and save at least one page (e.g. Home) before running a check.');
+      return;
+    }
     setError(null);
     try {
       await api.pageSpeedCheck(siteId, strategy); // returns as soon as the run is queued (202) — does not wait for it to finish
@@ -676,11 +692,17 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
               </button>
             ))}
           </div>
-          <button onClick={runCheck} disabled={checking} style={{
-            background: checking ? '#2a2f45' : '#5b46f5', color: checking ? '#a5b4fc' : '#fff', border: 'none',
-            padding: '6px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
-            cursor: checking ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
-          }}>
+          <button
+            onClick={runCheck}
+            disabled={checking || (!loading && !hasCheckablePage)}
+            title={!loading && !hasCheckablePage ? 'Select and save at least one monitored page in the Details tab first' : undefined}
+            style={{
+              background: checking ? '#2a2f45' : (!loading && !hasCheckablePage) ? '#1a2233' : '#5b46f5',
+              color: checking ? '#a5b4fc' : (!loading && !hasCheckablePage) ? '#5a6480' : '#fff',
+              border: 'none',
+              padding: '6px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+              cursor: (checking || (!loading && !hasCheckablePage)) ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
+            }}>
             {checking && (
               <span style={{
                 width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(165,180,252,0.35)',
@@ -698,6 +720,14 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
           <span>
             Re-checking all pages with Google PageSpeed — this can take a couple of minutes per page if the site responds slowly.
             The scores below are from the last successful check and will update in place as soon as the new run finishes, even if you switch tabs or sites in the meantime.
+          </span>
+        </div>
+      )}
+      {!loading && !checking && !hasCheckablePage && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8, color: '#fbbf7a', fontSize: 12, lineHeight: 1.5 }}>
+          <span style={{ fontSize: 14 }}>⚠</span>
+          <span>
+            No monitored pages are selected for this site yet, so "Check Now" is disabled. Go to the Details tab, select at least one page (e.g. Home), and save before running a check.
           </span>
         </div>
       )}
