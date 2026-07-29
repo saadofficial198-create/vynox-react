@@ -4,6 +4,7 @@ import ChartCanvas from '../components/ChartCanvas';
 import ScoreRing from '../components/ScoreRing';
 import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
+import { resolveHomePerfScore } from '../perfScore';
 import '../styles/dashboard.css';
 
 function Sparkline({ id, color, points }) {
@@ -83,29 +84,23 @@ export default function Dashboard() {
   }, [alerts]);
 
   // Home-page PageSpeed Performance score for the Sites Overview table's
-  // "Health Status" column — same fix as Sites.jsx's homePerfScores: this
-  // column used to show the old "Needs Attention"/"Good" health-check
-  // badge, but the user wants the SAME score ring shown on the site's own
-  // Performance tab here too, everywhere the health status appears. Uses
-  // the 'desktop' strategy specifically — Desktop is the one refreshed
-  // automatically (6-hourly internal job + the daily GitHub Actions
-  // pagespeed-desktop.yml workflow), so every list-style "Health Status"
-  // column always has a fresh score without anyone needing to click
-  // "Check Now" first. Fetched separately (one lightweight GET per site)
-  // and re-checked periodically so a score that finishes computing after
-  // this page loads still shows up without a manual refresh.
+  // "Health Status" column — same fix as Sites.jsx's homePerfScores. See
+  // src/perfScore.js for the full resolution order: prefer 'desktop' (kept
+  // fresh automatically by the 6-hourly internal job + daily
+  // pagespeed-desktop.yml workflow), fall back to 'mobile' if desktop has no
+  // successful result, and only show 0 (not '—') once both strategies have
+  // actually been attempted and neither succeeded — e.g. the target site's
+  // own server was too overloaded for Lighthouse to load the page. Fetched
+  // separately (one lightweight GET per site per strategy) and re-checked
+  // periodically so a score that finishes computing after this page loads
+  // still shows up without a manual refresh.
   const [homePerfScores, setHomePerfScores] = useState({});
   useEffect(() => {
     let cancelled = false;
     function fetchAll() {
       sites.forEach((s) => {
-        api.pageSpeedLatest(s._id, 'desktop')
-          .then(r => {
-            if (cancelled) return;
-            const home = (r.pages || []).find(p => p.pageLabel === 'Home');
-            const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
-            setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
-          })
+        resolveHomePerfScore((strategy) => api.pageSpeedLatest(s._id, strategy))
+          .then(score => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: score })); })
           .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
       });
     }

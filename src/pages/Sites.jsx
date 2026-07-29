@@ -9,6 +9,7 @@ import ScoreRing from '../components/ScoreRing';
 import { healthStatusMeta } from '../healthStatus';
 import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
+import { resolveHomePerfScore } from '../perfScore';
 import '../styles/sites.css';
 
 const alertCls = n => n === 0 ? 'an-zero' : n >= 6 ? 'an-red' : 'an-orange';
@@ -995,16 +996,13 @@ export default function Sites() {
     // without needing a manual refresh.
     function fetchAll() {
       sites.forEach((s) => {
-        // 'desktop' — the strategy that's kept fresh automatically (6-hourly
-        // internal job + daily pagespeed-desktop.yml workflow), so this
-        // list column always has a score without needing "Check Now" first.
-        api.pageSpeedLatest(s._id, 'desktop')
-          .then(r => {
-            if (cancelled) return;
-            const home = (r.pages || []).find(p => p.pageLabel === 'Home');
-            const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
-            setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
-          })
+        // Prefer 'desktop' (kept fresh automatically — 6-hourly internal job
+        // + daily pagespeed-desktop.yml workflow); fall back to 'mobile' if
+        // desktop has no successful result; show a real 0 (not '—') only if
+        // both strategies were attempted and neither succeeded — see
+        // src/perfScore.js for the full reasoning.
+        resolveHomePerfScore((strategy) => api.pageSpeedLatest(s._id, strategy))
+          .then(score => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: score })); })
           .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
       });
     }

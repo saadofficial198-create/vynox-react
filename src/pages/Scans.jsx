@@ -5,6 +5,7 @@ import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import ScoreRing from '../components/ScoreRing';
 import { api } from '../api';
+import { resolveHomePerfScore } from '../perfScore';
 import '../styles/scans.css';
 
 function fmtParts(iso) {
@@ -47,21 +48,20 @@ export default function Scans() {
   // Home-page PageSpeed Performance score per site, for the Health Status
   // column — same ScoreRing shared with Dashboard.jsx and Sites.jsx, polled
   // every 30s so it fills in once a check completes (not just on load).
-  // Uses 'desktop' — the strategy that's kept fresh automatically (6-hourly
-  // internal job + daily pagespeed-desktop.yml workflow), so this list
-  // column always has a score without needing anyone to click "Check Now".
+  // Resolution order (see src/perfScore.js for full reasoning): prefer
+  // 'desktop' (kept fresh automatically), fall back to 'mobile' if desktop
+  // has no successful score, and only show 0 (not '—') once BOTH strategies
+  // have been attempted and neither succeeded — e.g. the target site's
+  // server was too overloaded for Lighthouse to load the page at all. This
+  // makes "health check has been failing" visually distinct from "hasn't
+  // been checked yet".
   const [homePerfScores, setHomePerfScores] = useState({});
   useEffect(() => {
     let cancelled = false;
     function fetchAll() {
       sites.forEach((s) => {
-        api.pageSpeedLatest(s._id, 'desktop')
-          .then(r => {
-            if (cancelled) return;
-            const home = (r.pages || []).find(p => p.pageLabel === 'Home');
-            const score = home?.latest?.ok ? home.latest.scores?.performance ?? null : null;
-            setHomePerfScores(prev => ({ ...prev, [s._id]: score }));
-          })
+        resolveHomePerfScore((strategy) => api.pageSpeedLatest(s._id, strategy))
+          .then(score => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: score })); })
           .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
       });
     }
