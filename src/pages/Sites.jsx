@@ -290,6 +290,12 @@ function MonitoredPagesEditor({ site, onSaved }) {
         setCandidates(r.candidates || []);
         const initial = {};
         (r.monitoredPages || []).forEach((p) => { initial[p.path] = { label: p.label, enabled: p.enabled !== false, matchStatus: p.matchStatus }; });
+        // Home ('/') is a permanent, locked-in selection — every site gets
+        // screenshots/PageSpeed on its homepage no matter what, whether this
+        // is a brand-new site (no saved selection yet) or one being edited.
+        // Force it into `selected` here (not just visually) so a save right
+        // after load — without touching anything — still includes it.
+        if (!initial['/']) initial['/'] = { label: 'Home', enabled: true };
         setSelected(initial);
       })
       .catch((e) => setError(e.message))
@@ -299,6 +305,8 @@ function MonitoredPagesEditor({ site, onSaved }) {
   useEffect(() => { load(); }, [load]);
 
   function toggle(candidate) {
+    // Home can never be unchecked — it's a permanent monitored page.
+    if (candidate.path === '/') return;
     setSelected((prev) => {
       const next = { ...prev };
       if (next[candidate.path]) {
@@ -311,7 +319,11 @@ function MonitoredPagesEditor({ site, onSaved }) {
   }
 
   async function save() {
-    const pages = Object.entries(selected).map(([path, v]) => ({ label: v.label, path, enabled: v.enabled !== false }));
+    // Belt-and-suspenders: guarantee Home is in the payload even if
+    // `selected` somehow lost it, so it's genuinely impossible to save a
+    // selection without the homepage included.
+    const withHome = selected['/'] ? selected : { ...selected, '/': { label: 'Home', enabled: true } };
+    const pages = Object.entries(withHome).map(([path, v]) => ({ label: v.label, path, enabled: v.enabled !== false }));
     if (!pages.length) {
       setError('Select at least one page before saving.');
       return;
@@ -366,19 +378,33 @@ function MonitoredPagesEditor({ site, onSaved }) {
       {!loading && candidates.length > 0 && (
         <div className="mpe-list" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
           {candidates.map((c) => {
-            const isSel = !!selected[c.path];
+            const isHome = c.path === '/';
+            const isSel = isHome || !!selected[c.path];
             const info = selected[c.path];
             return (
               <label
                 key={c.path}
                 className={`mpe-row ${isSel ? 'mpe-row-selected' : 'mpe-row-unselected'}`}
+                title={isHome ? 'Home is always monitored and cannot be unselected' : undefined}
+                style={isHome ? { cursor: 'default' } : undefined}
               >
-                <input type="checkbox" checked={isSel} onChange={() => toggle(c)} style={{ accentColor: '#5b46f5', width: 15, height: 15, flexShrink: 0 }} />
+                <input
+                  type="checkbox"
+                  checked={isSel}
+                  disabled={isHome}
+                  onChange={() => toggle(c)}
+                  style={{ accentColor: '#5b46f5', width: 15, height: 15, flexShrink: 0, opacity: isHome ? 0.75 : 1 }}
+                />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="mpe-label">{c.label}</div>
                   <div className="mpe-path">{c.path}</div>
                 </div>
-                {info?.matchStatus === 'mismatch' && (
+                {isHome && (
+                  <span style={{ fontSize: 10, color: '#a5b4fc', background: 'rgba(91,70,245,0.12)', border: '1px solid rgba(91,70,245,0.3)', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                    Always monitored
+                  </span>
+                )}
+                {!isHome && info?.matchStatus === 'mismatch' && (
                   <span style={{ fontSize: 10, color: '#fca5a5', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
                     Slug mismatch
                   </span>
