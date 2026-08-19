@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
@@ -56,7 +56,11 @@ function rowFor(site, alertCounts) {
     // via GET /api/alerts (one row per active alert, each carrying a
     // siteId) — see alertCounts, built once per render from that response
     // and passed in here instead of trying to read it off site.latest.
-    alerts: alertCounts && Object.prototype.hasOwnProperty.call(alertCounts, site._id) ? alertCounts[site._id] : null,
+    // alertCounts only has entries for "high" severity alerts (see
+    // loadAlertCounts) — once it's loaded (not null), a missing key means
+    // the site genuinely has zero high-severity alerts, so show 0, not "—".
+    // "—" is reserved for the not-loaded-yet state (alertCounts === null).
+    alerts: alertCounts ? (alertCounts[site._id] || 0) : null,
     // NOTE: the health-status payload's field is "updatesAvailable", not
     // "updates" — this used to read l.updates (always undefined), which is
     // why the Updates column showed "—" for every site even when the
@@ -424,40 +428,29 @@ function Row({ k, v }) {
   return <div className="detail-row"><span className="detail-key">{k}</span><span className="detail-val">{v || '—'}</span></div>;
 }
 
-function AlertsTab({ snap }) {
-  const d = snap?.data || {};
-  const alerts = useMemo(() => {
-    const list = [];
-    const sec = d.security || {};
-    const malware = d.malware || {};
-    const updates = d.updates || {};
-    const health = d.health?.tests || {};
-    if (malware.suspicious_count > 0) list.push({ title: 'Malware Detected', sub: `${malware.suspicious_count} suspicious file(s) in uploads`, sev: 'high' });
-    if (updates.core_update_available === 'yes') list.push({ title: 'WordPress Core Update', sub: `New version ${updates.core_new_version || ''}`, sev: 'med' });
-    if (updates.plugins_to_update > 0) list.push({ title: 'Plugin Updates Available', sub: `${updates.plugins_to_update} plugin(s)`, sev: 'med' });
-    if (updates.themes_to_update > 0)  list.push({ title: 'Theme Updates Available', sub: `${updates.themes_to_update} theme(s)`, sev: 'med' });
-    if (typeof sec.file_editor_enabled === 'string' && /yes/i.test(sec.file_editor_enabled)) list.push({ title: 'File Editor Enabled', sub: 'Disable DISALLOW_FILE_EDIT in wp-config.php', sev: 'med' });
-    if (typeof sec.admin_path_default === 'string' && /yes/i.test(sec.admin_path_default)) list.push({ title: 'Default Login Path', sub: 'Move wp-login.php to a custom path', sev: 'low' });
-    Object.entries(health).forEach(([k, t]) => {
-      if (t?.status === 'critical') list.push({ title: t.label || k, sub: `Site Health (${t.badge})`, sev: 'high' });
-    });
-    return list;
-  }, [d]);
-
+// `alerts` comes straight from the backend's persisted Alert collection
+// (GET /api/alerts, pre-filtered to this site by the caller) — the exact
+// same data source the "Alerts" column and this tab's header count
+// (selectedRow.alerts) are built from. This used to recompute its own,
+// much smaller alert list straight from the snapshot (only 6 checks vs.
+// the backend's ~15+), which is why the count in the tab header never
+// matched what was actually listed below it.
+function AlertsTab({ alerts }) {
+  const list = alerts || [];
   return (
     <div className="sdp-tab-content active">
       <div className="sdp-block-head">
         <div className="sdp-block-title">Active Alerts</div>
         <a className="view-link" href="/alerts">View All Alerts</a>
       </div>
-      {alerts.length === 0 && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No active alerts — site looks clean.</div>}
-      {alerts.slice(0, 10).map((a, i) => (
-        <div className="sdp-alert" key={i}>
-          <div className={`sdp-alert-icon ${a.sev === 'high' ? 'sai-red' : 'sai-orange'}`}>
+      {list.length === 0 && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No active alerts — site looks clean.</div>}
+      {list.map((a) => (
+        <div className="sdp-alert" key={a.id}>
+          <div className={`sdp-alert-icon ${a.severity === 'high' ? 'sai-red' : 'sai-orange'}`}>
             <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
-          <div className="sdp-alert-body"><div className="sdp-alert-title">{a.title}</div><div className="sdp-alert-sub">{a.sub}</div></div>
-          <div className="sdp-alert-right"><span className={`sev sev-${a.sev}`}>{a.sev === 'high' ? 'High' : a.sev === 'med' ? 'Medium' : 'Low'}</span></div>
+          <div className="sdp-alert-body"><div className="sdp-alert-title">{a.name}</div><div className="sdp-alert-sub">{a.desc}</div></div>
+          <div className="sdp-alert-right"><span className={`sev ${a.sevCls}`}>{a.sevLabel}</span></div>
         </div>
       ))}
     </div>
@@ -932,7 +925,10 @@ function OtpCheckerTab({ site }) {
   );
 }
 
-const TAB_BODIES = { overview: OverviewTab, details: DetailsTab, alerts: AlertsTab, scans: ScansTab, backups: BackupsTab, updates: UpdatesTab, performance: PerformanceTab, screenshots: ScreenshotsTab, otp: OtpCheckerTab };
+// 'alerts' is deliberately absent here — it's rendered directly (see the
+// dedicated `tab === 'alerts'` branch below) with alerts filtered from the
+// parent's `allAlerts` state instead of the shared snap-based TabBody path.
+const TAB_BODIES = { overview: OverviewTab, details: DetailsTab, scans: ScansTab, backups: BackupsTab, updates: UpdatesTab, performance: PerformanceTab, screenshots: ScreenshotsTab, otp: OtpCheckerTab };
 
 export default function Sites() {
   const { setPageClass } = usePage();
@@ -974,14 +970,28 @@ export default function Sites() {
   // used to be read off site.latest.alerts, a field that never existed,
   // which is why the column always showed "—".
   const [alertCounts, setAlertCounts] = useState(null); // null = not loaded yet
+  // Raw active-alert rows from the backend (GET /api/alerts), kept as-is so
+  // the site detail page's Alerts tab (below) can list the exact same
+  // alerts the "Alerts" column/tab-header count is based on — it used to
+  // recompute its own (smaller, out-of-sync) list from the snapshot instead.
+  const [allAlerts, setAllAlerts] = useState([]);
   const loadAlertCounts = useCallback(() => {
     api.listAlerts()
       .then((r) => {
+        setAllAlerts(r.alerts || []);
         const counts = {};
-        (r.alerts || []).forEach((a) => { counts[a.siteId] = (counts[a.siteId] || 0) + 1; });
+        // Only count "high" severity alerts here — medium/low items (plugin
+        // updates, site-health "recommended" notices, etc.) already have
+        // their own signal (the Updates column, or the Alerts page itself),
+        // so folding them into this column made it look like every site had
+        // a pile of real problems when most of the count was routine noise.
+        (r.alerts || []).forEach((a) => {
+          if (a.severity !== 'high') return;
+          counts[a.siteId] = (counts[a.siteId] || 0) + 1;
+        });
         setAlertCounts(counts);
       })
-      .catch(() => {}); // leave alertCounts as-is (or null) — column falls back to "—"
+      .catch(() => {}); // leave alertCounts/allAlerts as-is — column falls back to "—"
   }, []);
   useEffect(() => {
     loadAlertCounts();
@@ -1265,7 +1275,14 @@ export default function Sites() {
                   )}
                   {tab === 'screenshots' && <TabBody site={selected} snap={snap} />}
                   {tab === 'otp' && <OtpCheckerTab site={selected} />}
-                  {tab !== 'performance' && tab !== 'screenshots' && tab !== 'otp' && (
+                  {/* Alerts come from the backend's Alert collection (already
+                      fetched for the "Alerts" column above), not from this
+                      site's snapshot — so, unlike the other tabs below, this
+                      one doesn't need to wait on snap/snapLoading. */}
+                  {tab === 'alerts' && (
+                    <AlertsTab alerts={allAlerts.filter(a => a.siteId === selected._id)} />
+                  )}
+                  {tab !== 'performance' && tab !== 'screenshots' && tab !== 'otp' && tab !== 'alerts' && (
                     <>
                       {snapLoading && <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>Loading data…</div>}
                       {!snapLoading && !snap && (

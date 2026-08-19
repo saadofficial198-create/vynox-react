@@ -15,6 +15,24 @@ const TYPE_ICONS = {
   Server:           { cls: 'ac-teal',  d: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></> },
 };
 
+const ALERTS_PAGE_SIZE = 10;
+
+// Builds the row of page buttons/ellipses for the pagination bar: always
+// shows first + last page, a window of up to 3 pages around the current
+// one, and collapses everything else into '…' (so a 40-page list doesn't
+// render 40 buttons).
+function pageNumberList(total, current) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = [1];
+  if (current > 3) pages.push('…');
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (current < total - 2) pages.push('…');
+  pages.push(total);
+  return pages;
+}
+
 function fmtDateParts(iso) {
   if (!iso) return ['—', ''];
   const d = new Date(iso);
@@ -385,6 +403,12 @@ export default function Alerts() {
   const [site, setSite] = useState('All Sites');
   const [type, setType] = useState('All Types');
   const [status, setStatus] = useState('All Status');
+  const [page, setPage] = useState(1);
+
+  // Any filter/search/tab change reshuffles which rows match, so the page
+  // the user was on may no longer exist (or may now show a confusing mix) —
+  // always land back on page 1 when the filtered set changes.
+  useEffect(() => { setPage(1); }, [tab, search, site, type, status]);
 
   useEffect(() => {
     setLoading(true);
@@ -426,6 +450,14 @@ export default function Alerts() {
       return matchTab && matchSearch && matchSite && matchType && matchStatus;
     });
   }, [alerts, tab, search, site, type, status]);
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / ALERTS_PAGE_SIZE));
+  // `page` itself is only reset to 1 by the effect above (on filter/search
+  // change); clamp here too so a stray render between "filters changed" and
+  // "effect ran" never slices with an out-of-range page.
+  const pageSafe = Math.min(page, totalPages);
+  const pageStart = (pageSafe - 1) * ALERTS_PAGE_SIZE;
+  const pageItems = visible.slice(pageStart, pageStart + ALERTS_PAGE_SIZE);
 
   const TABS = [
     { key: 'all',      label: <>All Alerts <span className="tab-count">({counts.total})</span></> },
@@ -516,7 +548,7 @@ export default function Alerts() {
                 {!loading && !loadError && visible.length === 0 && (
                   <tr className="no-results-row"><td colSpan={8}>{alerts.length === 0 ? 'No alerts found. Sync a site first to see its alerts here.' : 'No alerts match your filters.'}</td></tr>
                 )}
-                {!loading && visible.map(a => {
+                {!loading && pageItems.map(a => {
                   const icon = TYPE_ICONS[a.type] || TYPE_ICONS.Server;
                   const [fd, ft] = fmtDateParts(a.first);
                   const [ld, lt] = fmtDateParts(a.last);
@@ -546,7 +578,28 @@ export default function Alerts() {
             </table>
             {!loading && visible.length > 0 && (
               <div className="tbl-footer">
-                <span className="tbl-footer-text">Showing {visible.length} of {counts.total} alerts</span>
+                <span className="tbl-footer-text">Showing {pageStart + 1}–{Math.min(pageStart + ALERTS_PAGE_SIZE, visible.length)} of {visible.length} alerts</span>
+                {totalPages > 1 && (
+                  <div className="pagination">
+                    <div
+                      className={`pg-btn${pageSafe === 1 ? ' disabled' : ''}`}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                    >
+                      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+                    </div>
+                    {pageNumberList(totalPages, pageSafe).map((p, i) => (
+                      p === '…'
+                        ? <div className="pg-dots" key={`dots-${i}`}>…</div>
+                        : <div key={p} className={`pg-btn${p === pageSafe ? ' active' : ''}`} onClick={() => setPage(p)}>{p}</div>
+                    ))}
+                    <div
+                      className={`pg-btn${pageSafe === totalPages ? ' disabled' : ''}`}
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    >
+                      <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

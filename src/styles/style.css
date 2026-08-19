@@ -207,6 +207,7 @@ tbody td { padding: 9px 14px; vertical-align: middle; }
 }
 .pg-btn:hover { background: #1e2535; border-color: #2a3448; }
 .pg-btn.active { background: #5b46f5; color: #fff; border-color: #5b46f5; }
+.pg-btn.disabled { opacity: .35; cursor: default; pointer-events: none; }
 .pg-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
 
 /* ===== STAT CARDS (shared component; pages may override the container) ===== */
