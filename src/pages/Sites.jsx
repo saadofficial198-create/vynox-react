@@ -913,6 +913,9 @@ function OtpCheckerTab({ site }) {
                   {c.overallStatus === 'pass' && typeof c.deliveryLatencyMs === 'number' && (
                     <span style={{ fontSize: 11.5, color: '#22c55e' }}>Delivered in {(c.deliveryLatencyMs / 1000).toFixed(1)}s</span>
                   )}
+                  {c.otpProvider && (
+                    <span style={{ fontSize: 11, color: '#7a839e' }}>via {c.otpProvider === 'vynox' ? 'Vynox Commerce' : 'WooCommerce Email OTP Verification'}</span>
+                  )}
                 </div>
                 {meta.reason && (
                   <div style={{ marginTop: 5, fontSize: 11.5, color: '#8892a8' }}>{meta.reason}</div>
