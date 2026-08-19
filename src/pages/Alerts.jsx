@@ -4,6 +4,7 @@ import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import { api } from '../api';
+import Pagination from '../components/Pagination';
 import '../styles/alerts.css';
 
 const TYPE_ICONS = {
@@ -16,22 +17,6 @@ const TYPE_ICONS = {
 };
 
 const ALERTS_PAGE_SIZE = 10;
-
-// Builds the row of page buttons/ellipses for the pagination bar: always
-// shows first + last page, a window of up to 3 pages around the current
-// one, and collapses everything else into '…' (so a 40-page list doesn't
-// render 40 buttons).
-function pageNumberList(total, current) {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages = [1];
-  if (current > 3) pages.push('…');
-  const start = Math.max(2, current - 1);
-  const end = Math.min(total - 1, current + 1);
-  for (let i = start; i <= end; i++) pages.push(i);
-  if (current < total - 2) pages.push('…');
-  pages.push(total);
-  return pages;
-}
 
 function fmtDateParts(iso) {
   if (!iso) return ['—', ''];
@@ -579,27 +564,7 @@ export default function Alerts() {
             {!loading && visible.length > 0 && (
               <div className="tbl-footer">
                 <span className="tbl-footer-text">Showing {pageStart + 1}–{Math.min(pageStart + ALERTS_PAGE_SIZE, visible.length)} of {visible.length} alerts</span>
-                {totalPages > 1 && (
-                  <div className="pagination">
-                    <div
-                      className={`pg-btn${pageSafe === 1 ? ' disabled' : ''}`}
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                    >
-                      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-                    </div>
-                    {pageNumberList(totalPages, pageSafe).map((p, i) => (
-                      p === '…'
-                        ? <div className="pg-dots" key={`dots-${i}`}>…</div>
-                        : <div key={p} className={`pg-btn${p === pageSafe ? ' active' : ''}`} onClick={() => setPage(p)}>{p}</div>
-                    ))}
-                    <div
-                      className={`pg-btn${pageSafe === totalPages ? ' disabled' : ''}`}
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    >
-                      <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-                    </div>
-                  </div>
-                )}
+                <Pagination page={pageSafe} totalPages={totalPages} onChange={setPage} />
               </div>
             )}
           </div>

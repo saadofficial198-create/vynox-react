@@ -4,9 +4,12 @@ import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import ScoreRing from '../components/ScoreRing';
+import Pagination from '../components/Pagination';
 import { api } from '../api';
 import { resolveHomePerfScore } from '../perfScore';
 import '../styles/scans.css';
+
+const SCANS_PAGE_SIZE = 10;
 
 function fmtParts(iso) {
   if (!iso) return ['—', ''];
@@ -35,6 +38,12 @@ export default function Scans() {
   const [tab, setTab]     = useState('all');
   const [search, setSearch] = useState('');
   const [siteF, setSiteF] = useState('All Sites');
+  const [page, setPage] = useState(1);
+
+  // Tab/search/site filter changing reshuffles which rows match, so reset
+  // back to page 1 — otherwise the user can land on a page that no longer
+  // exists for the new filtered set.
+  useEffect(() => { setPage(1); }, [tab, search, siteF]);
 
   const load = () => {
     setLoading(true);
@@ -92,6 +101,11 @@ export default function Scans() {
       return matchTab && matchSearch && matchSite;
     });
   }, [scans, tab, search, siteF]);
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / SCANS_PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const pageStart = (pageSafe - 1) * SCANS_PAGE_SIZE;
+  const pageItems = visible.slice(pageStart, pageStart + SCANS_PAGE_SIZE);
 
   // Last-7-days activity
   const activityConfig = useMemo(() => {
@@ -199,7 +213,7 @@ export default function Scans() {
                 {!loading && !loadError && visible.length === 0 && (
                   <tr className="no-results-row"><td colSpan={8}>{scans.length === 0 ? 'No scans yet — the daily automated check runs at 08:00 AM.' : 'No scans match your filters.'}</td></tr>
                 )}
-                {!loading && visible.map(s => {
+                {!loading && pageItems.map(s => {
                   const [dm, dt] = fmtParts(s.date);
                   return (
                     <tr key={s.id}>
@@ -223,7 +237,8 @@ export default function Scans() {
             </table>
             {!loading && visible.length > 0 && (
               <div className="tbl-footer">
-                <span className="tbl-footer-text">Showing {visible.length} of {counts.total} scans</span>
+                <span className="tbl-footer-text">Showing {pageStart + 1}–{Math.min(pageStart + SCANS_PAGE_SIZE, visible.length)} of {visible.length} scans</span>
+                <Pagination page={pageSafe} totalPages={totalPages} onChange={setPage} />
               </div>
             )}
           </div>

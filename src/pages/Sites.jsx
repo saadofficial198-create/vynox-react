@@ -6,6 +6,7 @@ import CustomSelect from '../components/CustomSelect';
 import AddSiteModal from '../components/AddSiteModal';
 import HealthBadge from '../components/HealthBadge';
 import ScoreRing from '../components/ScoreRing';
+import Pagination from '../components/Pagination';
 import { healthStatusMeta } from '../healthStatus';
 import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
@@ -939,6 +940,11 @@ export default function Sites() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('All Status');
   const [tags, setTags] = useState('All Tags');
+  const [sitesPage, setSitesPage] = useState(1);
+  // Status/search filters reshuffle which rows match, so jump back to page
+  // 1 — otherwise the user can be left on a page that no longer exists for
+  // the new filtered set.
+  useEffect(() => { setSitesPage(1); }, [status, search]);
   const [tab, setTab] = useState('overview');
   const [addOpen, setAddOpen] = useState(false);
   const [sites, setSites] = useState([]);
@@ -1089,6 +1095,12 @@ export default function Sites() {
     return true;
   });
 
+  const SITES_PAGE_SIZE = 8;
+  const sitesTotalPages = Math.max(1, Math.ceil(filteredRows.length / SITES_PAGE_SIZE));
+  const sitesPageSafe = Math.min(sitesPage, sitesTotalPages);
+  const sitesPageStart = (sitesPageSafe - 1) * SITES_PAGE_SIZE;
+  const pagedRows = filteredRows.slice(sitesPageStart, sitesPageStart + SITES_PAGE_SIZE);
+
   const selected = sites.find(s => s._id === selectedId) || null;
   const selectedRow = selected ? rowFor(selected, alertCounts) : null;
   const TabBody = TAB_BODIES[tab];
@@ -1156,7 +1168,7 @@ export default function Sites() {
                   {loading && (<tr><td colSpan={9} style={{ textAlign: 'center', padding: 40, color: '#7a839e' }}>Loading sites…</td></tr>)}
                   {!loading && loadError && (<tr><td colSpan={9} style={{ textAlign: 'center', padding: 40, color: '#fca5a5' }}>Failed to load: {loadError}. <button onClick={loadSites} style={{ marginLeft: 8, background: 'transparent', color: '#5b46f5', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button></td></tr>)}
                   {!loading && !loadError && filteredRows.length === 0 && (<tr><td colSpan={9} style={{ textAlign: 'center', padding: 40, color: '#7a839e' }}>No sites yet. Click <strong>Add New Site</strong> to connect your first WordPress site.</td></tr>)}
-                  {!loading && filteredRows.map((s) => {
+                  {!loading && pagedRows.map((s) => {
                     const isSel = s.id === selectedId;
                     return (
                       <tr key={s.id} onClick={() => setSelectedId(s.id)} style={isSel ? { background: 'rgba(91,70,245,0.10)', boxShadow: 'inset 3px 0 0 #5b46f5', cursor: 'pointer' } : { cursor: 'pointer' }}>
@@ -1206,9 +1218,10 @@ export default function Sites() {
               </table>
             </div>
 
-            {sites.length > 8 && (
+            {filteredRows.length > 0 && (
               <div className="table-foot">
-                <span className="foot-text">Showing 1 to {Math.min(8, filteredRows.length)} of {filteredRows.length} sites</span>
+                <span className="foot-text">Showing {sitesPageStart + 1} to {Math.min(sitesPageStart + SITES_PAGE_SIZE, filteredRows.length)} of {filteredRows.length} sites</span>
+                <Pagination page={sitesPageSafe} totalPages={sitesTotalPages} onChange={setSitesPage} />
               </div>
             )}
           </div>

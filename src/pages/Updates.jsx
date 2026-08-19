@@ -3,8 +3,11 @@ import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
+import Pagination from '../components/Pagination';
 import { api } from '../api';
 import '../styles/updates.css';
+
+const UPDATES_PAGE_SIZE = 10;
 
 function fmtDateParts(iso) {
   if (!iso) return ['—', ''];
@@ -28,6 +31,11 @@ export default function Updates() {
   const [type, setType] = useState('All Update Types');
   const [sev, setSev] = useState('All Severities');
   const [status, setStatus] = useState('All Statuses');
+  const [page, setPage] = useState(1);
+
+  // Any filter/search change reshuffles which rows match, so reset back to
+  // page 1 — otherwise the user can land on a page that no longer exists.
+  useEffect(() => { setPage(1); }, [search, site, type, sev, status]);
 
   const load = () => {
     setLoading(true);
@@ -62,6 +70,11 @@ export default function Updates() {
       return matchSearch && matchSite && matchType && matchSev && matchStatus;
     });
   }, [updates, search, site, type, sev, status]);
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / UPDATES_PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const pageStart = (pageSafe - 1) * UPDATES_PAGE_SIZE;
+  const pageItems = visible.slice(pageStart, pageStart + UPDATES_PAGE_SIZE);
 
   const pct = (n) => counts.total ? ((n / counts.total) * 100).toFixed(1) : '0';
 
@@ -141,7 +154,7 @@ export default function Updates() {
                 {!loading && !loadError && visible.length === 0 && (
                   <tr className="no-results-row"><td colSpan={9}>{updates.length === 0 ? 'No updates available. Sync sites first to detect updates.' : 'No updates match your filters.'}</td></tr>
                 )}
-                {!loading && visible.map(u => {
+                {!loading && pageItems.map(u => {
                   const [dm, dt] = fmtDateParts(u.date);
                   return (
                     <tr key={u.id}>
@@ -161,7 +174,8 @@ export default function Updates() {
             </table>
             {!loading && visible.length > 0 && (
               <div className="tbl-footer">
-                <span className="tbl-footer-text">Showing {visible.length} of {counts.total} updates</span>
+                <span className="tbl-footer-text">Showing {pageStart + 1}–{Math.min(pageStart + UPDATES_PAGE_SIZE, visible.length)} of {visible.length} updates</span>
+                <Pagination page={pageSafe} totalPages={totalPages} onChange={setPage} />
               </div>
             )}
           </div>
