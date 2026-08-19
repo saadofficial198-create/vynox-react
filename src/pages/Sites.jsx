@@ -1025,7 +1025,9 @@ function UrlCheckerTab({ site }) {
             </span>
           </div>
           <div style={{ marginTop: 6, fontSize: 11.5, color: '#8892a8' }}>
-            Scanned {check.scannedPages || 0} of {check.totalPages || (running ? '…' : 0)} pages found
+            {check.phase === 'discovering'
+              ? `Finding pages to check — ${check.phaseLabel || 'starting…'} (${check.totalPages || 0} found so far)`
+              : <>Scanned {check.scannedPages || 0} of {check.totalPages || (running ? '…' : 0)} pages found</>}
             {check.truncated ? ' — site has more pages than this run could check (truncated)' : ''}
             {check.unreachablePages > 0 ? ` — ${check.unreachablePages} page(s) didn't respond` : ''}
           </div>
