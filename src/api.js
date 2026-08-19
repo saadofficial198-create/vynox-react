@@ -63,6 +63,14 @@ export const api = {
   otpCheckLatest:  ()                        => request('/api/otp-check/latest'),
   otpCheckHistory: (days = 30, siteId = null) => request(`/api/otp-check/history?days=${days}${siteId ? `&siteId=${siteId}` : ''}`),
 
+  // Domain-migration reference checker: finds every live page (home,
+  // contact, about, categories, single products, ...) still referencing an
+  // old domain (see routes/urlCheck.js). urlCheckRun starts a BACKGROUND run
+  // and returns immediately (202) — poll urlCheckLatest for progress/result,
+  // same reasoning as pageSpeedCheck above.
+  urlCheckRun:    (id, oldDomain) => request(`/api/url-check/${id}/run`, { method: 'POST', body: JSON.stringify({ oldDomain }) }),
+  urlCheckLatest: (id)            => request(`/api/url-check/${id}/latest`),
+
   // Imunify360 allowlist tracking (per-site, see models/Site.js's
   // imunify360Status). scripts/runOtpCheck.js auto-sets 'blocked'; the user
   // manually confirms 'allowlisted' here after fixing it in that site's own

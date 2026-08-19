@@ -929,9 +929,137 @@ function OtpCheckerTab({ site }) {
   );
 }
 
-// 'alerts' is deliberately absent here — it's rendered directly (see the
-// dedicated `tab === 'alerts'` branch below) with alerts filtered from the
-// parent's `allAlerts` state instead of the shared snap-based TabBody path.
+// Finds every leftover reference to an old domain (e.g. after migrating
+// vizkart.com -> vizkart.pk) across every live page of this site — home,
+// contact, about, categories, single products, everywhere — via
+// GET/POST /api/url-check/:siteId (services/urlReferenceCheck.js). Doesn't
+// depend on `snap` (this crawls the LIVE site directly, not the connector
+// snapshot), so — like OtpCheckerTab — it's rendered in its own branch
+// below instead of through the shared snap-gated TabBody path.
+function UrlCheckerTab({ site }) {
+  const [oldDomain, setOldDomain] = useState('');
+  const [check, setCheck] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(() => {
+    if (!site?._id) return;
+    api.urlCheckLatest(site._id)
+      .then(r => setCheck(r.check))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [site?._id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // A scan can take minutes on a large catalog — poll while it's running so
+  // progress (scannedPages/totalPages) updates without a manual refresh.
+  useEffect(() => {
+    if (check?.status !== 'running') return;
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
+  }, [check?.status, load]);
+
+  async function startCheck() {
+    const domain = oldDomain.trim();
+    if (!domain || !site?._id) return;
+    setStarting(true); setError(null);
+    try {
+      await api.urlCheckRun(site._id, domain);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const running = check?.status === 'running';
+  const hasMatches = (check?.matches?.length || 0) > 0;
+
+  return (
+    <div className="sdp-tab-content active">
+      <div className="sdp-block-head">
+        <div className="sdp-block-title">URL Reference Checker</div>
+      </div>
+      <div style={{ fontSize: 11.5, color: '#7a839e', margin: '0 0 12px' }}>
+        Scans every live page this site has — home, contact, about, categories, single products — for leftover mentions of an old domain (e.g. after migrating vizkart.com → vizkart.pk). Pages are discovered from three sources combined (the sitemap, WordPress's own REST API, and a same-site link crawl starting from the homepage), since a sitemap alone doesn't work reliably on every site.
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="Old domain, e.g. vizkart.com"
+          value={oldDomain}
+          onChange={(e) => setOldDomain(e.target.value)}
+          disabled={running}
+          style={{ flex: '1 1 240px', padding: '8px 12px', borderRadius: 6, border: '1px solid #232b3d', background: '#0d1520', color: '#e6e9f0', fontSize: 13 }}
+        />
+        <button
+          onClick={startCheck}
+          disabled={running || starting || !oldDomain.trim()}
+          style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: (running || starting) ? '#3a3f55' : '#5b46f5', color: '#fff', fontSize: 13, cursor: (running || starting) ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+        >
+          {running ? 'Scanning…' : starting ? 'Starting…' : 'Scan Now'}
+        </button>
+      </div>
+
+      {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
+      {error && <div style={{ padding: '8px 0', color: '#fca5a5', fontSize: 13 }}>{error}</div>}
+
+      {!loading && !check && !error && (
+        <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No check run yet for this site — enter the old domain above and click Scan Now.</div>
+      )}
+
+      {check && (
+        <div style={{ padding: '10px 12px', borderRadius: 8, background: '#0d1520', border: '1px solid #182031', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5 }}>
+            <span style={{ color: '#e6e9f0' }}>Searching for: <strong>{check.oldDomain}</strong></span>
+            <span style={{
+              fontSize: 11, fontWeight: 600, borderRadius: 20, padding: '3px 10px',
+              color: running ? '#f59e0b' : check.status === 'failed' ? '#ef4444' : (hasMatches ? '#ef4444' : '#22c55e'),
+              background: running ? 'rgba(245,158,11,0.1)' : check.status === 'failed' ? 'rgba(239,68,68,0.1)' : (hasMatches ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)'),
+            }}>
+              {running ? 'Running' : check.status === 'failed' ? 'Failed' : hasMatches ? `${check.matches.length} page(s) with matches` : 'Clean'}
+            </span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 11.5, color: '#8892a8' }}>
+            Scanned {check.scannedPages || 0} of {check.totalPages || (running ? '…' : 0)} pages found
+            {check.truncated ? ' — site has more pages than this run could check (truncated)' : ''}
+            {check.unreachablePages > 0 ? ` — ${check.unreachablePages} page(s) didn't respond` : ''}
+          </div>
+          {check.status === 'failed' && check.error && (
+            <div style={{ marginTop: 6, fontSize: 11.5, color: '#fca5a5' }}>{check.error}</div>
+          )}
+        </div>
+      )}
+
+      {hasMatches && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {check.matches.map((m) => (
+            <div key={m.pageUrl} style={{ padding: '10px 12px', borderRadius: 8, background: '#1a0f10', border: '1px solid #3a1f22' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <a href={m.pageUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd', fontSize: 12.5, wordBreak: 'break-all' }}>{m.pageUrl}</a>
+                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, whiteSpace: 'nowrap' }}>{m.matchCount} match{m.matchCount === 1 ? '' : 'es'}</span>
+              </div>
+              {m.snippets.map((s, i) => (
+                <div key={i} style={{ marginTop: 5, fontSize: 11, color: '#d4a5a5', fontFamily: 'monospace', background: '#0d0808', padding: '4px 6px', borderRadius: 4, wordBreak: 'break-all' }}>{s}</div>
+              ))}
+              {m.matchCount > m.snippets.length && (
+                <div style={{ marginTop: 4, fontSize: 10.5, color: '#8892a8' }}>+ {m.matchCount - m.snippets.length} more not shown</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 'alerts' and 'urlcheck' are deliberately absent here — both are rendered
+// directly (see the dedicated `tab === 'alerts'`/`tab === 'urlcheck'`
+// branches below) rather than through the shared snap-gated TabBody path.
 const TAB_BODIES = { overview: OverviewTab, details: DetailsTab, scans: ScansTab, backups: BackupsTab, updates: UpdatesTab, performance: PerformanceTab, screenshots: ScreenshotsTab, otp: OtpCheckerTab };
 
 export default function Sites() {
@@ -1271,6 +1399,7 @@ export default function Sites() {
                     { key: 'performance', label: 'Performance' },
                     { key: 'screenshots', label: 'Screenshots' },
                     { key: 'otp', label: 'OTP Checker' },
+                    { key: 'urlcheck', label: 'URL Checker' },
                   ].map(t => (
                     <div key={t.key} className={`sdp-tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</div>
                   ))}
@@ -1291,6 +1420,7 @@ export default function Sites() {
                   )}
                   {tab === 'screenshots' && <TabBody site={selected} snap={snap} />}
                   {tab === 'otp' && <OtpCheckerTab site={selected} />}
+                  {tab === 'urlcheck' && <UrlCheckerTab site={selected} />}
                   {/* Alerts come from the backend's Alert collection (already
                       fetched for the "Alerts" column above), not from this
                       site's snapshot — so, unlike the other tabs below, this
@@ -1298,7 +1428,7 @@ export default function Sites() {
                   {tab === 'alerts' && (
                     <AlertsTab alerts={allAlerts.filter(a => a.siteId === selected._id)} />
                   )}
-                  {tab !== 'performance' && tab !== 'screenshots' && tab !== 'otp' && tab !== 'alerts' && (
+                  {tab !== 'performance' && tab !== 'screenshots' && tab !== 'otp' && tab !== 'alerts' && tab !== 'urlcheck' && (
                     <>
                       {snapLoading && <div style={{ padding: 24, color: '#7a839e', textAlign: 'center' }}>Loading data…</div>}
                       {!snapLoading && !snap && (
