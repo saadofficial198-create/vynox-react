@@ -1,30 +1,26 @@
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-// The dashboard's login session token (see routes/auth.js /
-// middleware/requireAuth.js on the backend, AuthGate.jsx on the frontend).
-// Deliberately sessionStorage, not localStorage or a cookie — sessionStorage
-// is wiped automatically when the browser/tab closes, which is exactly the
-// "logout on browser close" behavior that was asked for, with no extra code
-// needed to enforce it.
-const TOKEN_KEY = 'vynox_session_token';
-export const getAuthToken   = () => sessionStorage.getItem(TOKEN_KEY);
-export const setAuthToken   = (token) => sessionStorage.setItem(TOKEN_KEY, token);
-export const clearAuthToken = () => sessionStorage.removeItem(TOKEN_KEY);
-
+// The dashboard's login session (see routes/auth.js / middleware/
+// requireAuth.js on the backend, AuthGate.jsx on the frontend) lives in an
+// HttpOnly cookie the browser manages entirely on its own — NOT
+// sessionStorage. sessionStorage is scoped per-TAB, which meant opening a
+// second tab of an already-logged-in browser asked for the password again
+// (confirmed live) — a real session cookie is shared across every tab of
+// the same browser while still disappearing when the browser itself fully
+// closes (a cookie with no Max-Age/Expires is cleared then, not per-tab).
+// `credentials: 'include'` on every call is what makes fetch() actually
+// send/accept that cross-origin cookie (vynox-react on Vercel, this API on
+// a different cPanel domain) — without it the browser silently drops it.
 async function request(path, opts = {}) {
-  const token = getAuthToken();
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers, credentials: 'include' });
 
   // A 401 here means the session is gone (expired, logged out elsewhere, or
-  // the backend restarted and never had it) — drop the dead token and tell
-  // AuthGate to show the login screen again, from wherever in the app this
-  // call happened to fire. Login itself intentionally returns 401 for a
-  // wrong password, which must NOT trigger this (there's no session to lose).
+  // the backend restarted and never had it) — tell AuthGate to show the
+  // login screen again, from wherever in the app this call happened to
+  // fire. Login itself intentionally returns 401 for a wrong password,
+  // which must NOT trigger this (there's no session to lose yet).
   if (res.status === 401 && path !== '/api/auth/login') {
-    clearAuthToken();
     window.dispatchEvent(new Event('vynox:unauthorized'));
   }
 
@@ -109,5 +105,9 @@ export const api = {
   // already knows not to treat *this* path's 401 as "session died".
   login:        (password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
   logout:       ()         => request('/api/auth/logout', { method: 'POST' }),
+  // AuthGate calls this on load to check whether the session cookie (if
+  // any) is still valid — it can't just check for the cookie's presence
+  // itself since HttpOnly cookies aren't readable from JS at all.
+  authMe:       ()         => request('/api/auth/me'),
   loginHistory: ()         => request('/api/auth/logins'),
 };

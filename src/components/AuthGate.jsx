@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react';
-import { api, getAuthToken, setAuthToken, clearAuthToken } from '../api';
+import { api } from '../api';
 
 // Gates the entire dashboard behind a password, verified server-side (see
-// routes/auth.js) — this component only decides whether to render `children`
-// at all; it never itself holds the real password or trusts anything it
-// can't re-verify with the backend. A session token in sessionStorage
-// (see api.js) is what actually proves "logged in" to every API call —
-// this screen just controls whether the app underneath is visible.
+// routes/auth.js) — this component only decides whether to render
+// `children` at all; it never itself holds the real password. The actual
+// proof of "logged in" is an HttpOnly session cookie the browser manages
+// on its own (see api.js's comment on why a cookie rather than
+// sessionStorage/localStorage) — JavaScript can't read that cookie's value
+// at all, so the only way to know if it's still valid is to ask the
+// backend (GET /api/auth/me).
 export default function AuthGate({ children }) {
-  const [authed, setAuthed] = useState(() => !!getAuthToken());
+  // null = still checking on load, true/false = known. Starting at null
+  // (rather than assuming false) avoids flashing the login form for a
+  // split second on every page load even when already logged in.
+  const [authed, setAuthed] = useState(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.authMe().then(() => setAuthed(true)).catch(() => setAuthed(false));
+  }, []);
 
   // api.js dispatches this the moment ANY API call comes back 401 (session
   // expired, revoked, or the backend never had it to begin with) — from
@@ -28,8 +37,7 @@ export default function AuthGate({ children }) {
     setLoading(true);
     setError(null);
     try {
-      const r = await api.login(password);
-      setAuthToken(r.token);
+      await api.login(password);
       setAuthed(true);
       setPassword('');
     } catch (e) {
@@ -40,6 +48,7 @@ export default function AuthGate({ children }) {
   }
 
   if (authed) return children;
+  if (authed === null) return null; // brief initial /api/auth/me check
 
   return (
     <div style={{
@@ -100,10 +109,9 @@ export default function AuthGate({ children }) {
   );
 }
 
-// Small helper other components (e.g. a "Logout" button in Settings) can
-// reuse without re-implementing the clear-token + notify-AuthGate dance.
+// Small helper other components (e.g. the "Logout" button in Settings) can
+// reuse without re-implementing the clear-cookie + notify-AuthGate dance.
 export async function logout() {
-  try { await api.logout(); } catch { /* token may already be dead — fine either way */ }
-  clearAuthToken();
+  try { await api.logout(); } catch { /* session may already be dead — fine either way */ }
   window.dispatchEvent(new Event('vynox:unauthorized'));
 }
