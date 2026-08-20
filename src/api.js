@@ -1,10 +1,33 @@
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+// The dashboard's login session token (see routes/auth.js /
+// middleware/requireAuth.js on the backend, AuthGate.jsx on the frontend).
+// Deliberately sessionStorage, not localStorage or a cookie — sessionStorage
+// is wiped automatically when the browser/tab closes, which is exactly the
+// "logout on browser close" behavior that was asked for, with no extra code
+// needed to enforce it.
+const TOKEN_KEY = 'vynox_session_token';
+export const getAuthToken   = () => sessionStorage.getItem(TOKEN_KEY);
+export const setAuthToken   = (token) => sessionStorage.setItem(TOKEN_KEY, token);
+export const clearAuthToken = () => sessionStorage.removeItem(TOKEN_KEY);
+
 async function request(path, opts = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-    ...opts,
-  });
+  const token = getAuthToken();
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+
+  // A 401 here means the session is gone (expired, logged out elsewhere, or
+  // the backend restarted and never had it) — drop the dead token and tell
+  // AuthGate to show the login screen again, from wherever in the app this
+  // call happened to fire. Login itself intentionally returns 401 for a
+  // wrong password, which must NOT trigger this (there's no session to lose).
+  if (res.status === 401 && path !== '/api/auth/login') {
+    clearAuthToken();
+    window.dispatchEvent(new Event('vynox:unauthorized'));
+  }
+
   let body = null;
   try { body = await res.json(); } catch { /* empty */ }
   if (!res.ok || (body && body.ok === false)) {
@@ -80,4 +103,11 @@ export const api = {
   // manually confirms 'allowlisted' here after fixing it in that site's own
   // cPanel — see Imunify360_Allowlist_Guide.md.
   setImunify360Status: (id, status) => request(`/api/sites/${id}/imunify360-status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+
+  // Dashboard login gate (see AuthGate.jsx). login() deliberately does NOT
+  // send an Authorization header (there's no token yet) — request() above
+  // already knows not to treat *this* path's 401 as "session died".
+  login:        (password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  logout:       ()         => request('/api/auth/logout', { method: 'POST' }),
+  loginHistory: ()         => request('/api/auth/logins'),
 };

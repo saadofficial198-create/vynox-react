@@ -4,7 +4,34 @@ import ChartCanvas from '../components/ChartCanvas';
 import CustomSelect from '../components/CustomSelect';
 import Toggle from '../components/Toggle';
 import { useScanner } from '../context/ScannerContext';
+import { api } from '../api';
+import { logout } from '../components/AuthGate';
 import '../styles/settings.css';
+
+// Turns a raw User-Agent string into something a human can actually read at
+// a glance ("Chrome on Windows") for the Login Activity table below —
+// deliberately simple regex matching (covers the handful of
+// browsers/OSes anyone signing into this dashboard is realistically using),
+// not a full UA-parsing library.
+function describeUserAgent(ua) {
+  if (!ua) return 'Unknown device';
+  const browser =
+    /Edg\//.test(ua) ? 'Edge' :
+    /Chrome\//.test(ua) ? 'Chrome' :
+    /Firefox\//.test(ua) ? 'Firefox' :
+    /Safari\//.test(ua) ? 'Safari' : 'Unknown browser';
+  const os =
+    /Windows/.test(ua) ? 'Windows' :
+    /Mac OS X/.test(ua) ? 'macOS' :
+    /Android/.test(ua) ? 'Android' :
+    /iPhone|iPad/.test(ua) ? 'iOS' :
+    /Linux/.test(ua) ? 'Linux' : 'Unknown OS';
+  return `${browser} on ${os}`;
+}
+function fmtLoginTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
 
 const SETTINGS_NAV = [
   { group: 'General', items: [
@@ -48,6 +75,17 @@ export default function Settings() {
   const [language, setLanguage] = useState('English');
   const [maintMode, setMaintMode] = useState(false);
   const [betaFeatures, setBetaFeatures] = useState(true);
+
+  // Real data — everything else on this page is a static mock, but this
+  // table is the actual audit log requested for the dashboard's
+  // password gate (see routes/auth.js's GET /logins).
+  const [loginAttempts, setLoginAttempts] = useState([]);
+  const [loginAttemptsError, setLoginAttemptsError] = useState(null);
+  useEffect(() => {
+    api.loginHistory()
+      .then(r => setLoginAttempts(r.attempts || []))
+      .catch(e => setLoginAttemptsError(e.message));
+  }, []);
 
   return (
     <>
@@ -224,6 +262,28 @@ export default function Settings() {
           </div>
 
           <div className="panel">
+            <div className="panel-header"><div className="panel-title">Login Activity</div></div>
+            <div style={{ padding: '4px 0 8px' }}>
+              {loginAttemptsError && <div style={{ padding: '10px 16px', color: '#fca5a5', fontSize: 12.5 }}>{loginAttemptsError}</div>}
+              {!loginAttemptsError && loginAttempts.length === 0 && (
+                <div style={{ padding: '10px 16px', color: '#7a839e', fontSize: 12.5 }}>No login attempts recorded yet.</div>
+              )}
+              {loginAttempts.slice(0, 8).map((a, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: i < loginAttempts.length - 1 ? '1px solid rgba(90,100,128,0.12)' : 'none' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.success ? '#22c55e' : '#ef4444', flexShrink: 0 }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 12.5, color: '#e2e8f0' }}>{a.ip || 'Unknown IP'} <span style={{ color: '#5a6480' }}>· {describeUserAgent(a.userAgent)}</span></div>
+                    <div style={{ fontSize: 11, color: '#5a6480' }}>{fmtLoginTime(a.attemptedAt)}</div>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: a.success ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>
+                    {a.success ? 'Success' : 'Failed'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="panel">
             <div className="panel-header"><div className="panel-title">Notification Channels</div></div>
             {[
               { cls: 'nci-blue', d: <><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,6 12,13 2,6"/></>, name: 'Email Notifications', sub: 'ali@vynox.com' },
@@ -241,6 +301,15 @@ export default function Settings() {
           <div className="panel">
             <div className="panel-header"><div className="panel-title">Quick Actions</div></div>
             <div className="qa-grid">
+              {/* Only real action in this grid — everything else here is
+                  decorative. Clears the session both server-side (DELETE
+                  the Session doc) and client-side (sessionStorage), then
+                  the login screen reappears immediately. */}
+              <div className="qa-card" onClick={logout} style={{ cursor: 'pointer' }}>
+                <div className="qa-icon qi-red"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+                <div className="qa-label">Logout</div>
+                <div className="qa-sub">End this dashboard session</div>
+              </div>
               <div className="qa-card">
                 <div className="qa-icon qi-red"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
                 <div className="qa-label">Clear Cache</div>
