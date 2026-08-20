@@ -77,9 +77,18 @@ export default function Dashboard() {
   // /api/alerts (already fetched into `alerts`) returns one row per active
   // alert with a siteId on it — not a per-site total — so tally it here
   // instead of reading a site.latest.alerts field that never existed.
+  //
+  // Only counts "high" severity — same fix Sites.jsx's own Alerts column
+  // already got (medium/low items like plugin updates or health
+  // "recommended" notices have their own signal elsewhere, so folding them
+  // in here made nearly every site show the same inflated number and never
+  // matched what the Sites page showed for the same site).
   const siteAlertCounts = useMemo(() => {
     const counts = {};
-    alerts.forEach((a) => { counts[a.siteId] = (counts[a.siteId] || 0) + 1; });
+    alerts.forEach((a) => {
+      if (a.severity !== 'high') return;
+      counts[a.siteId] = (counts[a.siteId] || 0) + 1;
+    });
     return counts;
   }, [alerts]);
 
@@ -213,7 +222,7 @@ export default function Dashboard() {
                         <div className="lastscan-sub">{fmtDate(s.lastSyncedAt)}</div>
                       </td>
                       <td><span className={`upd-num ${updCls(upd)}`}>{upd}</span></td>
-                      <td><div className={s.status === 'online' ? 'status-online' : 'status-offline'}><span className={s.status === 'online' ? 'dot-online' : 'dot-offline'} />{s.status === 'online' ? 'Online' : 'Offline'}</div></td>
+                      <td><div className={s.status === 'online' ? 'status-online' : 'status-offline'}><span className={s.status === 'online' ? 'dot-online' : 'dot-offline'} />{s.status === 'online' ? 'Live' : 'Offline'}</div></td>
                       <td></td>
                     </tr>
                   );

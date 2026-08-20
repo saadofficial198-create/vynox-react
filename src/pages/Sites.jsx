@@ -1384,7 +1384,7 @@ export default function Sites() {
 
   const rows = sites.map((s) => rowFor(s, alertCounts));
   const filteredRows = rows.filter(r => {
-    if (status === 'Online'  && !r.online) return false;
+    if (status === 'Live'    && !r.online) return false;
     if (status === 'Offline' && r.online)  return false;
     const q = search.trim().toLowerCase();
     if (q && !`${r.name} ${r.sub}`.toLowerCase().includes(q)) return false;
@@ -1411,7 +1411,7 @@ export default function Sites() {
         </div></div>
         <div className="stat-card"><div className="stat-card-top">
           <div className="stat-icon si-green"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
-          <div className="stat-text"><div className="stat-label">Online</div><div className="stat-value">{sites.filter(s => s.status === 'online').length}</div><div className="stat-sub green">{sites.length ? `${Math.round(sites.filter(s => s.status === 'online').length / sites.length * 100)}% of total` : '—'}</div></div>
+          <div className="stat-text"><div className="stat-label">Live</div><div className="stat-value">{sites.filter(s => s.status === 'online').length}</div><div className="stat-sub green">{sites.length ? `${Math.round(sites.filter(s => s.status === 'online').length / sites.length * 100)}% of total` : '—'}</div></div>
           <div className="stat-sparkline"><Sparkline id="s-g2" color="#22c55e" points="2,22 12,18 22,20 32,14 42,16 52,10 66,8" /></div>
         </div></div>
         <div className="stat-card"><div className="stat-card-top">
@@ -1445,7 +1445,7 @@ export default function Sites() {
                 <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input type="text" placeholder="Search sites..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
-              <CustomSelect value={status} onChange={setStatus} options={['All Status', 'Online', 'Offline']} />
+              <CustomSelect value={status} onChange={setStatus} options={['All Status', 'Live', 'Offline']} />
               <CustomSelect value={tags} onChange={setTags} options={['All Tags', 'Main Site', 'E-commerce']} />
               <button className="add-btn" onClick={() => setAddOpen(true)}>
                 <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1489,7 +1489,7 @@ export default function Sites() {
                         <td>
                           <div className={`status-cell ${s.online ? 's-online' : 's-offline'}`}>
                             <span className={`status-dot ${s.online ? 'dot-on' : 'dot-off'}`} />
-                            {s.online ? 'Online' : 'Offline'}
+                            {s.online ? 'Live' : 'Offline'}
                           </div>
                         </td>
                         <td>{s.alerts == null ? <span style={{ color: '#5a6480' }}>—</span> : <span className={`alerts-num ${alertCls(s.alerts)}`}>{s.alerts}</span>}</td>
@@ -1544,7 +1544,7 @@ export default function Sites() {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                         <span className="sdp-name">{selected.name}</span>
-                        <span className={selected.status === 'online' ? 'sdp-online' : 'sdp-offline'}><span className="sdp-online-dot" />{selected.status === 'online' ? 'Online' : 'Offline'}</span>
+                        <span className={selected.status === 'online' ? 'sdp-online' : 'sdp-offline'}><span className="sdp-online-dot" />{selected.status === 'online' ? 'Live' : 'Offline'}</span>
                       </div>
                       <div className="sdp-sub">{(selected.url || '').replace(/^https?:\/\//, '')}</div>
                       <a className="sdp-link" href={selected.url} target="_blank" rel="noopener noreferrer">
