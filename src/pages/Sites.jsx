@@ -236,14 +236,13 @@ function OverviewTab({ site, snap }) {
   );
 }
 
-// "Latest Scan Summary" + "Quick Actions" — deliberately rendered as its
-// OWN full-width section BELOW the split-view (see where this is used in
-// Sites()), not nested inside the site-detail preview panel. That panel
-// (.split-right) is a fixed 530px, which squeezed these two side-by-side
-// boxes down to ~240px each — cramped, and narrower than intended. Down
-// here, below both the sites table and the preview panel, it gets the
-// page's full width to work with instead. Also means these two boxes stay
-// visible regardless of which tab is open in the preview panel above,
+// "Latest Scan Summary" + "Quick Actions" — rendered right below the
+// site-detail preview card (.sdp), but still inside .split-right (same
+// column, same width as the card above it — NOT spanning under the sites
+// table on the left). .split-right was widened from 530px to 640px (see
+// sites.css) so these two side-by-side boxes have enough room without
+// feeling cramped. Living outside .sdp's own tab-content area also means
+// these two boxes stay visible regardless of which tab is open above,
 // rather than only on Overview.
 function SiteQuickPanel({ site, snap, setTab, syncing, onSyncNow }) {
   const navigate = useNavigate();
@@ -1625,21 +1624,22 @@ export default function Sites() {
               </>
             )}
           </div>
+
+          {/* Right below the site preview card, still inside .split-right
+              (same column, same width) — not spanning under the sites
+              table on the left. Stays visible no matter which tab is open
+              above it. */}
+          {selected && (
+            <SiteQuickPanel
+              site={selected}
+              snap={snap}
+              setTab={setTab}
+              syncing={!!syncingIds[selected._id]}
+              onSyncNow={handleSyncNow}
+            />
+          )}
         </div>
       </div>
-
-      {/* Deliberately OUTSIDE .split-row (full page width, not the 530px
-          .split-right panel) — see SiteQuickPanel's own comment for why.
-          Stays visible no matter which tab is open above. */}
-      {selected && (
-        <SiteQuickPanel
-          site={selected}
-          snap={snap}
-          setTab={setTab}
-          syncing={!!syncingIds[selected._id]}
-          onSyncNow={handleSyncNow}
-        />
-      )}
 
       {/* Fixed-position dropdown menu (escapes table overflow) */}
       {menu && (() => {
