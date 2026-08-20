@@ -234,8 +234,8 @@ function OverviewTab({ site, snap, setTab, syncing, onSyncNow }) {
         {history.length <= 1 && <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — check back after the next scan</div>}
       </div>
 
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 280px', background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px' }}>
+      <div className="overview-bottom-grid">
+        <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px', minWidth: 0 }}>
           <div className="sdp-block-title" style={{ marginBottom: 6 }}>Latest Scan Summary</div>
           <div className="detail-list">
             <Row k="Scan Status" v={!snap ? '—' : <span style={{ color: snap.ok ? '#22c55e' : '#ef4444', fontWeight: 600 }}>{snap.ok ? 'Completed' : 'Failed'}</span>} />
@@ -257,7 +257,7 @@ function OverviewTab({ site, snap, setTab, syncing, onSyncNow }) {
           </button>
         </div>
 
-        <div style={{ flex: '1 1 280px', background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px' }}>
+        <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px', minWidth: 0 }}>
           <div className="sdp-block-title" style={{ marginBottom: 10 }}>Quick Actions</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {/* Exact same action as the "Sync Now" row item in the Sites
