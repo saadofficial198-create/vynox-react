@@ -1,10 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import AddSiteModal from '../components/AddSiteModal';
-import HealthBadge from '../components/HealthBadge';
 import ScoreRing from '../components/ScoreRing';
 import Pagination from '../components/Pagination';
 import { healthStatusMeta } from '../healthStatus';
@@ -76,12 +75,57 @@ function rowFor(site, alertCounts) {
 
 /* ============ TABS — driven by selected site + snapshot ============ */
 
-function OverviewTab({ site, snap }) {
-  const [period, setPeriod] = useState('Last 7 Days');
-  const [history, setHistory] = useState([]);
-  const d = snap?.data || {};
+// Downsamples a site's history to one point per calendar day — the LAST
+// (most recent) successful scan of that day. The automated scan runs
+// hourly (see .github/workflows/daily-scan.yml), so without this a "7
+// Days" view would plot up to 24 points per day, all squashed under the
+// same date label — this is what made the chart look "wrong"/too dense.
+function bucketHistoryPerDay(points) {
+  const byDay = new Map();
+  for (const p of points) {
+    const d = new Date(p.date);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const existing = byDay.get(key);
+    if (!existing || new Date(p.date) > new Date(existing.date)) byDay.set(key, p);
+  }
+  return [...byDay.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
+}
 
-  const periodDays = period === 'Last 30 Days' ? 30 : period === 'Last 90 Days' ? 90 : 7;
+// Downsamples the last 24 hours to 12 evenly-spaced points (one per
+// 2-hour window) instead of all 24 hourly scans. Each slot picks whichever
+// successful scan falls inside its window — since the history endpoint
+// already only returns ok:true snapshots, a slot whose top-of-hour scan
+// failed naturally just uses the next successful one within that same
+// window instead (no separate fail-handling needed). A slot with no
+// successful scan at all (site was down that whole window) is skipped
+// rather than faked, so the line just has a gap there.
+function bucketHistoryLast24h(points, slots = 12) {
+  const now = Date.now();
+  const windowMs = 24 * 60 * 60 * 1000;
+  const stepMs = windowMs / slots;
+  const start = now - windowMs;
+  const result = [];
+  for (let i = 0; i < slots; i++) {
+    const slotStart = start + i * stepMs;
+    const slotEnd = slotStart + stepMs;
+    const hit = points.find(p => {
+      const t = new Date(p.date).getTime();
+      return t >= slotStart && t < slotEnd;
+    });
+    if (hit) result.push(hit);
+  }
+  return result;
+}
+
+function OverviewTab({ site, snap }) {
+  const [period, setPeriod] = useState('7 Days');
+  // Raw (un-bucketed) snapshot history, fetched ONCE per site over a fixed
+  // 7-day window — that single window covers both the "7 Days" and "1 Day"
+  // views, so switching the dropdown below never re-fetches; it only
+  // re-buckets this same array client-side (see `history` below), making
+  // the toggle instant instead of showing a loading flicker.
+  const [rawHistory, setRawHistory] = useState([]);
+  const d = snap?.data || {};
 
   // "Agregga" is VYNOX's own connector-adjacent plugin (the payment plugin
   // installed alongside vynox-connector.php on every client site) — the
@@ -93,10 +137,15 @@ function OverviewTab({ site, snap }) {
 
   useEffect(() => {
     if (!site?._id) return;
-    api.siteHistory(site._id, periodDays)
-      .then(r => setHistory(r.points || []))
-      .catch(() => setHistory([]));
-  }, [site?._id, periodDays]);
+    api.siteHistory(site._id, 7)
+      .then(r => setRawHistory(r.points || []))
+      .catch(() => setRawHistory([]));
+  }, [site?._id]);
+
+  const history = useMemo(
+    () => (period === '1 Day' ? bucketHistoryLast24h(rawHistory) : bucketHistoryPerDay(rawHistory)),
+    [rawHistory, period]
+  );
 
   return (
     <div className="sdp-tab-content active">
@@ -131,25 +180,35 @@ function OverviewTab({ site, snap }) {
       <div>
         <div className="sdp-chart-header">
           <div className="sdp-section-title">Issues History</div>
-          <CustomSelect sm value={period} onChange={setPeriod} options={['Last 7 Days', 'Last 30 Days', 'Last 90 Days']} />
+          <CustomSelect sm value={period} onChange={setPeriod} options={['7 Days', '1 Day']} />
         </div>
         <div className="sdp-chart-wrap">
-          <ChartCanvas config={(ctx) => {
-            const pts = history.length > 0 ? history : [];
-            const labels = pts.map(p => new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            const criticalData    = pts.map(p => p.critical);
-            const recommendedData = pts.map(p => p.recommended);
-            return {
-              type: 'line',
-              data: { labels, datasets: [
-                { label: 'Critical', data: criticalData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#ef4444' },
-                { label: 'Recommended', data: recommendedData, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#f59e0b' },
-              ] },
-              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', maxTicksLimit: 7 } }, y: { min: 0, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', stepSize: 1 } } } },
-            };
-          }} deps={[history]} />
+          {/* updateInPlace: switching the dropdown only re-buckets already-
+              fetched data (see `history` above) — this makes ChartCanvas
+              animate the transition (Chart.js's own update animation)
+              instead of hard-cutting to a freshly recreated chart. */}
+          <ChartCanvas
+            updateInPlace
+            config={(ctx) => {
+              const pts = history;
+              const labels = pts.map(p => period === '1 Day'
+                ? new Date(p.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                : new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+              const criticalData    = pts.map(p => p.critical);
+              const recommendedData = pts.map(p => p.recommended);
+              return {
+                type: 'line',
+                data: { labels, datasets: [
+                  { label: 'Critical', data: criticalData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#ef4444' },
+                  { label: 'Recommended', data: recommendedData, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#f59e0b' },
+                ] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', maxTicksLimit: 12 } }, y: { min: 0, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', stepSize: 1 } } } },
+              };
+            }}
+            deps={[history, period]}
+          />
         </div>
-        {history.length <= 1 && <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — check back after the next daily scan</div>}
+        {history.length <= 1 && <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — check back after the next scan</div>}
       </div>
     </div>
   );
@@ -1087,6 +1146,7 @@ export default function Sites() {
   const [snap, setSnap] = useState(null);
   const [snapLoading, setSnapLoading] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
+  const [syncingIds, setSyncingIds] = useState({}); // { [siteId]: boolean } — "Sync Now" row action in progress
 
   // PerformanceTab's "Check Now" state, lifted up here (keyed by site id) so
   // an in-flight PageSpeed check survives switching tabs or selecting a
@@ -1219,6 +1279,26 @@ export default function Sites() {
     } catch (e) { alert('Delete failed: ' + e.message); }
   }
 
+  async function handleSyncNow(id) {
+    setMenu(null);
+    if (syncingIds[id]) return;
+    setSyncingIds(prev => ({ ...prev, [id]: true }));
+    try {
+      await api.syncSite(id);
+      // Refreshes lastSyncedAt/status/latest/PHP/WP for this row.
+      await loadSites();
+      // Also kick off an immediate alert-count refresh (fire-and-forget —
+      // loadAlertCounts doesn't return its promise) instead of waiting up
+      // to 30s for its own poll interval — the sync just changed the exact
+      // data alerts are derived from.
+      loadAlertCounts();
+    } catch (e) {
+      alert('Sync failed: ' + e.message);
+    } finally {
+      setSyncingIds(prev => { const next = { ...prev }; delete next[id]; return next; });
+    }
+  }
+
   const rows = sites.map((s) => rowFor(s, alertCounts));
   const filteredRows = rows.filter(r => {
     if (status === 'Online'  && !r.online) return false;
@@ -1336,8 +1416,14 @@ export default function Sites() {
                         <td><span className="ver-text">{s.wp}</span></td>
                         <td onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <button title="Preview" onClick={() => setSelectedId(s.id)} style={{ background: isSel ? '#5b46f5' : 'rgba(91,70,245,0.15)', border: 'none', color: isSel ? '#fff' : '#5b46f5', width: 28, height: 28, borderRadius: 5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <button
+                              title={syncingIds[s.id] ? 'Syncing…' : 'Preview'}
+                              onClick={() => !syncingIds[s.id] && setSelectedId(s.id)}
+                              disabled={!!syncingIds[s.id]}
+                              style={{ background: isSel ? '#5b46f5' : 'rgba(91,70,245,0.15)', border: 'none', color: isSel ? '#fff' : '#5b46f5', width: 28, height: 28, borderRadius: 5, cursor: syncingIds[s.id] ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {syncingIds[s.id]
+                                ? <span className="sync-spinner" />
+                                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
                             </button>
                             <button className="action-dot-btn" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ id: s.id, x: r.right - 140, y: r.bottom + 4 }); }}>
                               <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg>
@@ -1385,8 +1471,12 @@ export default function Sites() {
                     </div>
                   </div>
                   <div className="sdp-score-wrap">
-                    {selectedRow?.status ? <HealthBadge status={selectedRow.status} label={selectedRow.statusLabel} /> : <span style={{ color: '#5a6480', fontSize: 12 }}>—</span>}
-                    <div className="sdp-score-lbl">Health Status</div>
+                    {/* Same ScoreRing (PageSpeed Performance score, colored
+                        ring) the "Health Status" column already uses in the
+                        All Sites table — this used to show HealthBadge's
+                        text-based WP Site Health badge instead, which looked
+                        inconsistent with the list right next to it. */}
+                    <ScoreRing val={homePerfScores[selected._id] ?? null} label="Health Status" />
                   </div>
                 </div>
 
@@ -1464,6 +1554,9 @@ export default function Sites() {
             <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
             <div style={{ position: 'fixed', top: menu.y, left: menu.x, background: '#0f1729', border: '1px solid #2a3448', borderRadius: 6, padding: 4, minWidth: 160, zIndex: 100, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
               <button onClick={() => { setMenu(null); window.open(s.url, '_blank'); }} style={menuItem}>Open Site ↗</button>
+              <button onClick={() => handleSyncNow(s._id)} disabled={!!syncingIds[s._id]} style={{ ...menuItem, opacity: syncingIds[s._id] ? 0.5 : 1 }}>
+                {syncingIds[s._id] ? 'Syncing…' : 'Sync Now'}
+              </button>
               <button onClick={() => handleDelete(s._id, s.name)} style={{ ...menuItem, color: '#fca5a5' }}>Delete</button>
             </div>
           </>

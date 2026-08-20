@@ -24,6 +24,10 @@ export const api = {
   addSite:     (payload)          => request('/api/sites', { method: 'POST', body: JSON.stringify(payload) }),
   deleteSite:  (id)               => request(`/api/sites/${id}`, { method: 'DELETE' }),
   latestSnap:  (id)               => request(`/api/sites/${id}/latest`),
+  // Manual "Sync Now" row action — pulls this one site's data right now
+  // instead of waiting for the next automated hourly scan. Synchronous
+  // (awaits the actual fetch), unlike the background-style checks below.
+  syncSite:    (id)               => request(`/api/sites/${id}/sync`, { method: 'POST' }),
   siteHistory: (id, days = 7)    => request(`/api/sites/${id}/history?days=${days}`),
   listAlerts:  ()                 => request('/api/alerts'),
   listUpdates: ()                 => request('/api/updates'),

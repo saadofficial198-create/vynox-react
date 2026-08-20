@@ -270,3 +270,12 @@
 }
 
 }
+
+/* Manual "Sync Now" spinner (per-row Actions column) — @keyframes can't be
+   nested inside .page-sites above, so this lives at the top level. */
+.sync-spinner {
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid rgba(91,70,245,0.25); border-top-color: #5b46f5;
+  display: inline-block; animation: sync-spin 0.8s linear infinite;
+}
+@keyframes sync-spin { to { transform: rotate(360deg); } }
