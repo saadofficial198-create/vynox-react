@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
@@ -39,6 +40,16 @@ export default function Scans() {
   const [search, setSearch] = useState('');
   const [siteF, setSiteF] = useState('All Sites');
   const [page, setPage] = useState(1);
+
+  // "View All Scans" on a site's Overview tab links here as
+  // /scans?site=<host> (host computed the exact same way scans' own `.site`
+  // field is, server-side — see routes/scans.js's hostFromUrl) — pre-select
+  // that site's filter on arrival instead of landing on the unfiltered list.
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const site = searchParams.get('site');
+    if (site) setSiteF(site);
+  }, [searchParams]);
 
   // Tab/search/site filter changing reshuffles which rows match, so reset
   // back to page 1 — otherwise the user can land on a page that no longer
