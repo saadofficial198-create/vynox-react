@@ -127,8 +127,7 @@ function bucketHistoryLast24h(points, slots = 12) {
 
 const qaBtnStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', width: '100%' };
 
-function OverviewTab({ site, snap, setTab, syncing, onSyncNow }) {
-  const navigate = useNavigate();
+function OverviewTab({ site, snap }) {
   const [period, setPeriod] = useState('7 Days');
   // Raw (un-bucketed) snapshot history, fetched ONCE per site over a fixed
   // 7-day window — that single window covers both the "7 Days" and "1 Day"
@@ -233,50 +232,65 @@ function OverviewTab({ site, snap, setTab, syncing, onSyncNow }) {
         </div>
         {history.length <= 1 && <div style={{ fontSize: 11, color: '#5a6480', textAlign: 'center', marginTop: 4 }}>History requires multiple snapshots — check back after the next scan</div>}
       </div>
+    </div>
+  );
+}
 
-      <div className="overview-bottom-grid">
-        <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px', minWidth: 0 }}>
-          <div className="sdp-block-title" style={{ marginBottom: 6 }}>Latest Scan Summary</div>
-          <div className="detail-list">
-            <Row k="Scan Status" v={!snap ? '—' : <span style={{ color: snap.ok ? '#22c55e' : '#ef4444', fontWeight: 600 }}>{snap.ok ? 'Completed' : 'Failed'}</span>} />
-            <Row k="Scan Type" v={snap ? 'Full Scan' : '—'} />
-            <Row k="Scan Started" v={snap?.fetchedAt ? fmtDate(snap.fetchedAt) : '—'} />
-            {/* Not tracked yet — Snapshot only records fetchedAt (a single
-                timestamp), not a start/end pair, so there's nothing real to
-                compute here. Shown as "—" rather than a fabricated number,
-                same convention this app already uses everywhere else for
-                data that hasn't been collected yet. */}
-            <Row k="Scan Duration" v="—" />
-            <Row k="Files Scanned" v={snap?.ok ? (d.malware?.files_scanned ?? 0).toLocaleString() : '—'} />
-          </div>
-          <button
-            onClick={() => navigate(`/scans?site=${encodeURIComponent(hostFromUrl(site.url))}`)}
-            style={{ marginTop: 12, width: '100%', background: 'transparent', border: '1px solid #2a3448', color: '#c8d0e0', borderRadius: 8, padding: '9px 0', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
-          >
-            View All Scans
-          </button>
+// "Latest Scan Summary" + "Quick Actions" — deliberately rendered as its
+// OWN full-width section BELOW the split-view (see where this is used in
+// Sites()), not nested inside the site-detail preview panel. That panel
+// (.split-right) is a fixed 530px, which squeezed these two side-by-side
+// boxes down to ~240px each — cramped, and narrower than intended. Down
+// here, below both the sites table and the preview panel, it gets the
+// page's full width to work with instead. Also means these two boxes stay
+// visible regardless of which tab is open in the preview panel above,
+// rather than only on Overview.
+function SiteQuickPanel({ site, snap, setTab, syncing, onSyncNow }) {
+  const navigate = useNavigate();
+  const d = snap?.data || {};
+  return (
+    <div className="overview-bottom-grid">
+      <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px', minWidth: 0 }}>
+        <div className="sdp-block-title" style={{ marginBottom: 6 }}>Latest Scan Summary</div>
+        <div className="detail-list">
+          <Row k="Scan Status" v={!snap ? '—' : <span style={{ color: snap.ok ? '#22c55e' : '#ef4444', fontWeight: 600 }}>{snap.ok ? 'Completed' : 'Failed'}</span>} />
+          <Row k="Scan Type" v={snap ? 'Full Scan' : '—'} />
+          <Row k="Scan Started" v={snap?.fetchedAt ? fmtDate(snap.fetchedAt) : '—'} />
+          {/* Not tracked yet — Snapshot only records fetchedAt (a single
+              timestamp), not a start/end pair, so there's nothing real to
+              compute here. Shown as "—" rather than a fabricated number,
+              same convention this app already uses everywhere else for
+              data that hasn't been collected yet. */}
+          <Row k="Scan Duration" v="—" />
+          <Row k="Files Scanned" v={snap?.ok ? (d.malware?.files_scanned ?? 0).toLocaleString() : '—'} />
         </div>
+        <button
+          onClick={() => navigate(`/scans?site=${encodeURIComponent(hostFromUrl(site.url))}`)}
+          style={{ marginTop: 12, width: '100%', background: 'transparent', border: '1px solid #2a3448', color: '#c8d0e0', borderRadius: 8, padding: '9px 0', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+        >
+          View All Scans
+        </button>
+      </div>
 
-        <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px', minWidth: 0 }}>
-          <div className="sdp-block-title" style={{ marginBottom: 10 }}>Quick Actions</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {/* Exact same action as the "Sync Now" row item in the Sites
-                list's 3-dot menu (see handleSyncNow in Sites()) — sharing
-                the same syncingIds state means triggering it from either
-                place shows "processing" in BOTH the list's preview/eye icon
-                AND this button at once. */}
-            <button
-              onClick={() => onSyncNow?.(site._id)}
-              disabled={syncing}
-              style={{ ...qaBtnStyle, gap: 8, background: syncing ? '#2a2f45' : '#5b46f5', color: '#fff', cursor: syncing ? 'default' : 'pointer' }}
-            >
-              {syncing && <span className="sync-spinner" />}
-              {syncing ? 'Scanning…' : 'Run New Scan'}
-            </button>
-            <button onClick={() => setTab?.('alerts')} style={{ ...qaBtnStyle, background: 'rgba(239,68,68,0.12)', color: '#fca5a5' }}>View Site Alerts</button>
-            <button onClick={() => setTab?.('backups')} style={{ ...qaBtnStyle, background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>View Backups</button>
-            <button onClick={() => setTab?.('screenshots')} style={{ ...qaBtnStyle, background: 'rgba(122,131,158,0.14)', color: '#c8d0e0' }}>View Screenshots</button>
-          </div>
+      <div style={{ background: '#0a1120', border: '1px solid #1a2333', borderRadius: 12, padding: '16px 18px', minWidth: 0 }}>
+        <div className="sdp-block-title" style={{ marginBottom: 10 }}>Quick Actions</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Exact same action as the "Sync Now" row item in the Sites
+              list's 3-dot menu (see handleSyncNow in Sites()) — sharing
+              the same syncingIds state means triggering it from either
+              place shows "processing" in BOTH the list's preview/eye icon
+              AND this button at once. */}
+          <button
+            onClick={() => onSyncNow?.(site._id)}
+            disabled={syncing}
+            style={{ ...qaBtnStyle, gap: 8, background: syncing ? '#2a2f45' : '#5b46f5', color: '#fff', cursor: syncing ? 'default' : 'pointer' }}
+          >
+            {syncing && <span className="sync-spinner" />}
+            {syncing ? 'Scanning…' : 'Run New Scan'}
+          </button>
+          <button onClick={() => setTab?.('alerts')} style={{ ...qaBtnStyle, background: 'rgba(239,68,68,0.12)', color: '#fca5a5' }}>View Site Alerts</button>
+          <button onClick={() => setTab?.('backups')} style={{ ...qaBtnStyle, background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>View Backups</button>
+          <button onClick={() => setTab?.('screenshots')} style={{ ...qaBtnStyle, background: 'rgba(122,131,158,0.14)', color: '#c8d0e0' }}>View Screenshots</button>
         </div>
       </div>
     </div>
@@ -1604,20 +1618,7 @@ export default function Sites() {
                           Screenshots/Performance tabs kept showing stale page counts
                           until a full reload. Re-running loadSites() here refreshes
                           `selected`/`site` for every tab immediately after a save. */}
-                      {/* setTab/syncing/onSyncNow are only used by OverviewTab's
-                          Quick Actions box — harmless extra props for the
-                          other tabs sharing this render path (Details/
-                          Scans/Backups/Updates), which simply ignore them. */}
-                      {!snapLoading && snap && (
-                        <TabBody
-                          site={selected}
-                          snap={snap}
-                          onSaved={loadSites}
-                          setTab={setTab}
-                          syncing={!!syncingIds[selected._id]}
-                          onSyncNow={handleSyncNow}
-                        />
-                      )}
+                      {!snapLoading && snap && <TabBody site={selected} snap={snap} onSaved={loadSites} />}
                     </>
                   )}
                 </div>
@@ -1626,6 +1627,19 @@ export default function Sites() {
           </div>
         </div>
       </div>
+
+      {/* Deliberately OUTSIDE .split-row (full page width, not the 530px
+          .split-right panel) — see SiteQuickPanel's own comment for why.
+          Stays visible no matter which tab is open above. */}
+      {selected && (
+        <SiteQuickPanel
+          site={selected}
+          snap={snap}
+          setTab={setTab}
+          syncing={!!syncingIds[selected._id]}
+          onSyncNow={handleSyncNow}
+        />
+      )}
 
       {/* Fixed-position dropdown menu (escapes table overflow) */}
       {menu && (() => {
