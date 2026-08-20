@@ -147,6 +147,26 @@ function OverviewTab({ site, snap }) {
     [rawHistory, period]
   );
 
+  // Memoized so this function reference only changes when the chart's
+  // actual data does — see the comment where it's passed to ChartCanvas
+  // below for why that matters with updateInPlace.
+  const chartConfig = useMemo(() => () => {
+    const pts = history;
+    const labels = pts.map(p => period === '1 Day'
+      ? new Date(p.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const criticalData    = pts.map(p => p.critical);
+    const recommendedData = pts.map(p => p.recommended);
+    return {
+      type: 'line',
+      data: { labels, datasets: [
+        { label: 'Critical', data: criticalData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#ef4444' },
+        { label: 'Recommended', data: recommendedData, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#f59e0b' },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', maxTicksLimit: 12 } }, y: { min: 0, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', stepSize: 1 } } } },
+    };
+  }, [history, period]);
+
   return (
     <div className="sdp-tab-content active">
       <div className="info-grid">
@@ -186,25 +206,17 @@ function OverviewTab({ site, snap }) {
           {/* updateInPlace: switching the dropdown only re-buckets already-
               fetched data (see `history` above) — this makes ChartCanvas
               animate the transition (Chart.js's own update animation)
-              instead of hard-cutting to a freshly recreated chart. */}
+              instead of hard-cutting to a freshly recreated chart.
+              `config` is memoized on [history, period] — without that, a
+              fresh (ctx) => {...} closure gets created on EVERY render,
+              which ChartCanvas's effect treats as "config changed", so any
+              unrelated re-render of this page (e.g. the 30s alert-count/
+              PageSpeed polls up in Sites()) kept calling chart.update()
+              and restarting the animation — the chart never looked like it
+              settled down. */}
           <ChartCanvas
             updateInPlace
-            config={(ctx) => {
-              const pts = history;
-              const labels = pts.map(p => period === '1 Day'
-                ? new Date(p.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-                : new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-              const criticalData    = pts.map(p => p.critical);
-              const recommendedData = pts.map(p => p.recommended);
-              return {
-                type: 'line',
-                data: { labels, datasets: [
-                  { label: 'Critical', data: criticalData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.10)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#ef4444' },
-                  { label: 'Recommended', data: recommendedData, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', tension: 0.42, fill: true, pointRadius: 3.5, borderWidth: 2, pointBackgroundColor: '#f59e0b' },
-                ] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', maxTicksLimit: 12 } }, y: { min: 0, grid: { color: 'rgba(30,37,53,0.7)' }, ticks: { color: '#5a6480', stepSize: 1 } } } },
-              };
-            }}
+            config={chartConfig}
             deps={[history, period]}
           />
         </div>
