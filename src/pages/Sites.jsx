@@ -10,7 +10,7 @@ import Pagination from '../components/Pagination';
 import { healthStatusMeta } from '../healthStatus';
 import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
-import { resolveHomePerfScore } from '../perfScore';
+import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/sites.css';
 
 const alertCls = n => n === 0 ? 'an-zero' : n >= 6 ? 'an-red' : 'an-orange';
@@ -1295,40 +1295,36 @@ export default function Sites() {
   useEffect(() => { loadSites(); }, [loadSites]);
 
   // Home-page PageSpeed performance score for the "All Sites" list, shown
-  // next to the Health Status badge. Fetched separately (one lightweight
-  // GET per site, not one big backend change) since PageSpeedResult isn't
-  // part of the Site.latest payload the list already gets.
+  // next to the Health Status badge. Fetched via ONE batched call per
+  // strategy (not one GET per site per strategy) — the old per-site loop
+  // fired 2 requests per site every 30s, which at 47 sites meant 94
+  // requests competing for the browser's ~6-connections-per-origin limit
+  // and queuing for 10+ seconds each (confirmed live in the Network tab).
+  // See routes/pagespeed.js's /latest-all + perfScore.js's
+  // resolveHomePerfScoresBatch.
   const [homePerfScores, setHomePerfScores] = useState({}); // { [siteId]: number|null }
   useEffect(() => {
     let cancelled = false;
 
-    // IMPORTANT: this used to skip any site whose score was already fetched
-    // ONCE, even if that first fetch came back null (e.g. because the
-    // PageSpeed check hadn't finished yet, or hadn't run at all when the
-    // page first loaded) — so a site's Health Status column could get
-    // permanently stuck showing "—" even after a real score existed in the
-    // database moments later, until a full page reload. Now it re-fetches
-    // every site on an interval too, not just once per site per page load,
-    // so a score that lands *after* this page was opened still shows up
+    // Re-fetches on an interval (not just once per page load) so a score
+    // that finishes computing after this page was opened still shows up
     // without needing a manual refresh.
     function fetchAll() {
-      sites.forEach((s) => {
-        // Prefer 'desktop' (kept fresh automatically — 6-hourly internal job
-        // + daily pagespeed-desktop.yml workflow); fall back to 'mobile' if
-        // desktop has no successful result; show a real 0 (not '—') only if
-        // both strategies were attempted and neither succeeded — see
-        // src/perfScore.js for the full reasoning.
-        resolveHomePerfScore((strategy) => api.pageSpeedLatest(s._id, strategy))
-          .then(score => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: score })); })
-          .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
+      const siteIds = sites.map(s => s._id);
+      Promise.all([
+        api.pageSpeedLatestAll('desktop').catch(() => ({ scores: {} })),
+        api.pageSpeedLatestAll('mobile').catch(() => ({ scores: {} })),
+      ]).then(([desktop, mobile]) => {
+        if (cancelled) return;
+        setHomePerfScores(resolveHomePerfScoresBatch(siteIds, desktop.scores, mobile.scores));
       });
     }
 
     fetchAll();
-    // Re-check every 30s — cheap (one lightweight GET per site) and means a
-    // score that finishes computing after this page was opened appears on
-    // its own, matching the "dashboard should just work without me manually
-    // re-checking" expectation.
+    // Re-check every 30s — cheap (2 requests total, regardless of site
+    // count) and means a score that finishes computing after this page was
+    // opened appears on its own, matching the "dashboard should just work
+    // without me manually re-checking" expectation.
     const interval = setInterval(fetchAll, 30000);
     return () => { cancelled = true; clearInterval(interval); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -4,7 +4,7 @@ import ChartCanvas from '../components/ChartCanvas';
 import ScoreRing from '../components/ScoreRing';
 import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
-import { resolveHomePerfScore } from '../perfScore';
+import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/dashboard.css';
 
 function Sparkline({ id, color, points }) {
@@ -93,24 +93,27 @@ export default function Dashboard() {
   }, [alerts]);
 
   // Home-page PageSpeed Performance score for the Sites Overview table's
-  // "Health Status" column — same fix as Sites.jsx's homePerfScores. See
-  // src/perfScore.js for the full resolution order: prefer 'desktop' (kept
-  // fresh automatically by the 6-hourly internal job + daily
-  // pagespeed-desktop.yml workflow), fall back to 'mobile' if desktop has no
-  // successful result, and only show 0 (not '—') once both strategies have
-  // actually been attempted and neither succeeded — e.g. the target site's
-  // own server was too overloaded for Lighthouse to load the page. Fetched
-  // separately (one lightweight GET per site per strategy) and re-checked
-  // periodically so a score that finishes computing after this page loads
-  // still shows up without a manual refresh.
+  // "Health Status" column. See src/perfScore.js for the full resolution
+  // order: prefer 'desktop' (kept fresh automatically by the 6-hourly
+  // internal job + daily pagespeed-desktop.yml workflow), fall back to
+  // 'mobile' if desktop has no successful result, and only show 0 (not '—')
+  // once both strategies have actually been attempted and neither
+  // succeeded. Fetched via ONE batched call per strategy (not one per site)
+  // — see routes/pagespeed.js's /latest-all for why: at 47 sites, the old
+  // per-site loop fired 94 requests every 30s, and the browser's
+  // ~6-connections-per-origin limit turned that into a queue backing up
+  // 10+ seconds per request (confirmed live in the Network tab).
   const [homePerfScores, setHomePerfScores] = useState({});
   useEffect(() => {
     let cancelled = false;
     function fetchAll() {
-      sites.forEach((s) => {
-        resolveHomePerfScore((strategy) => api.pageSpeedLatest(s._id, strategy))
-          .then(score => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: score })); })
-          .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
+      const siteIds = sites.map(s => s._id);
+      Promise.all([
+        api.pageSpeedLatestAll('desktop').catch(() => ({ scores: {} })),
+        api.pageSpeedLatestAll('mobile').catch(() => ({ scores: {} })),
+      ]).then(([desktop, mobile]) => {
+        if (cancelled) return;
+        setHomePerfScores(resolveHomePerfScoresBatch(siteIds, desktop.scores, mobile.scores));
       });
     }
     if (sites.length) fetchAll();

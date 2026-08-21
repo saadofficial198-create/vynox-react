@@ -7,7 +7,7 @@ import CustomSelect from '../components/CustomSelect';
 import ScoreRing from '../components/ScoreRing';
 import Pagination from '../components/Pagination';
 import { api } from '../api';
-import { resolveHomePerfScore } from '../perfScore';
+import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/scans.css';
 
 const SCANS_PAGE_SIZE = 10;
@@ -71,18 +71,22 @@ export default function Scans() {
   // Resolution order (see src/perfScore.js for full reasoning): prefer
   // 'desktop' (kept fresh automatically), fall back to 'mobile' if desktop
   // has no successful score, and only show 0 (not '—') once BOTH strategies
-  // have been attempted and neither succeeded — e.g. the target site's
-  // server was too overloaded for Lighthouse to load the page at all. This
-  // makes "health check has been failing" visually distinct from "hasn't
-  // been checked yet".
+  // have been attempted and neither succeeded. Fetched via ONE batched call
+  // per strategy (not one per site) — see routes/pagespeed.js's /latest-all;
+  // the old per-site loop fired 2 requests per site every 30s, which at 47
+  // sites overwhelmed the browser's per-origin connection limit and queued
+  // every request for 10+ seconds (confirmed live in the Network tab).
   const [homePerfScores, setHomePerfScores] = useState({});
   useEffect(() => {
     let cancelled = false;
     function fetchAll() {
-      sites.forEach((s) => {
-        resolveHomePerfScore((strategy) => api.pageSpeedLatest(s._id, strategy))
-          .then(score => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: score })); })
-          .catch(() => { if (!cancelled) setHomePerfScores(prev => ({ ...prev, [s._id]: prev[s._id] ?? null })); });
+      const siteIds = sites.map(s => s._id);
+      Promise.all([
+        api.pageSpeedLatestAll('desktop').catch(() => ({ scores: {} })),
+        api.pageSpeedLatestAll('mobile').catch(() => ({ scores: {} })),
+      ]).then(([desktop, mobile]) => {
+        if (cancelled) return;
+        setHomePerfScores(resolveHomePerfScoresBatch(siteIds, desktop.scores, mobile.scores));
       });
     }
     if (sites.length) fetchAll();

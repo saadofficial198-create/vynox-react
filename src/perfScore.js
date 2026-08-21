@@ -24,37 +24,34 @@
 // been checked at all (no documents for desktop OR mobile) still resolves to
 // null, so brand-new sites don't immediately show an alarming 0 before their
 // first scheduled check has even had a chance to run.
+//
+// Resolved for every site in ONE batched call per strategy (GET
+// /api/pagespeed/latest-all), not one GET /:siteId/latest per site per
+// strategy — that per-site pattern used to send 2N requests every 30s (94
+// for 47 sites), each needing its own CORS preflight, which overwhelmed the
+// browser's ~6-connections-per-origin limit and made every request queue
+// for 10+ seconds (confirmed live in the Network tab). See
+// routes/pagespeed.js's /latest-all for the backend half.
 
 /**
- * @param {(strategy: 'desktop'|'mobile') => Promise<any>} fetchLatest — should
- *   resolve to the same shape api.pageSpeedLatest() returns: { pages: [{ pageLabel, latest }] }
- * @returns {Promise<number|null>} resolved performance score for the Home
- *   page: desktop if available, else mobile, else 0 if both were attempted
- *   and failed/missing, else null if neither strategy has ever been checked.
+ * @param {string[]} siteIds
+ * @param {Record<string, any>} desktopScores - api.pageSpeedLatestAll('desktop').scores, keyed by siteId
+ * @param {Record<string, any>} mobileScores - api.pageSpeedLatestAll('mobile').scores, keyed by siteId
+ * @returns {Record<string, number|null>}
  */
-export async function resolveHomePerfScore(fetchLatest) {
-  const [desktopRes, mobileRes] = await Promise.all([
-    fetchLatest('desktop').catch(() => null),
-    fetchLatest('mobile').catch(() => null),
-  ]);
+export function resolveHomePerfScoresBatch(siteIds, desktopScores, mobileScores) {
+  const out = {};
+  for (const id of siteIds) {
+    const d = desktopScores?.[id];
+    const m = mobileScores?.[id];
 
-  const homeOf = (res) => (res?.pages || []).find((p) => p.pageLabel === 'Home') || null;
-  const desktopHome = homeOf(desktopRes);
-  const mobileHome = homeOf(mobileRes);
+    const desktopScore = d?.ok ? d.scores?.performance ?? null : null;
+    if (desktopScore != null) { out[id] = desktopScore; continue; }
 
-  const desktopScore = desktopHome?.latest?.ok ? desktopHome.latest.scores?.performance ?? null : null;
-  if (desktopScore != null) return desktopScore;
+    const mobileScore = m?.ok ? m.scores?.performance ?? null : null;
+    if (mobileScore != null) { out[id] = mobileScore; continue; }
 
-  const mobileScore = mobileHome?.latest?.ok ? mobileHome.latest.scores?.performance ?? null : null;
-  if (mobileScore != null) return mobileScore;
-
-  // Neither strategy currently has a successful score. Distinguish "checked
-  // and failed" from "never checked at all": `latest` is only non-null once
-  // at least one PageSpeedResult document (ok:true or ok:false) exists for
-  // that strategy.
-  const desktopAttempted = desktopHome?.latest != null;
-  const mobileAttempted = mobileHome?.latest != null;
-  if (desktopAttempted || mobileAttempted) return 0;
-
-  return null; // truly never checked yet — keep showing '—', not an alarming 0
+    out[id] = (d != null || m != null) ? 0 : null;
+  }
+  return out;
 }

@@ -61,6 +61,11 @@ export const api = {
   // (the browser then misreports that as a CORS error). Poll
   // pageSpeedStatus/pageSpeedLatest afterwards to see progress/results.
   pageSpeedLatest:  (id, strategy = 'mobile') => request(`/api/pagespeed/${id}/latest?strategy=${strategy}`),
+  // Every site's Home-page score in ONE call, for the Dashboard/Sites/Scans
+  // "Health Status" column — see routes/pagespeed.js's /latest-all and
+  // perfScore.js's resolveHomePerfScoresBatch for why this replaced one
+  // GET call per site per strategy.
+  pageSpeedLatestAll: (strategy = 'mobile') => request(`/api/pagespeed/latest-all?strategy=${strategy}`),
   pageSpeedHistory: (id, page, days = 30, strategy = 'mobile') => request(`/api/pagespeed/${id}/history?page=${encodeURIComponent(page)}&days=${days}&strategy=${strategy}`),
   pageSpeedCheck:   (id, strategy = 'mobile') => request(`/api/pagespeed/${id}/check?strategy=${strategy}`, { method: 'POST' }),
   pageSpeedStatus:  (id, strategy = 'mobile') => request(`/api/pagespeed/${id}/status?strategy=${strategy}`),
