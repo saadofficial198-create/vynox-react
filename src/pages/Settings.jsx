@@ -121,6 +121,24 @@ export default function Settings() {
     }
   }
 
+  // On-demand run of the 31-day screenshot retention cleanup (see
+  // services/screenshotRetention.js) — shows exactly what it found/deleted
+  // right here instead of needing to dig through cPanel's Node app logs.
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
+  const [cleanupError, setCleanupError] = useState(null);
+  async function handleRunCleanup() {
+    setCleanupRunning(true); setCleanupError(null); setCleanupResult(null);
+    try {
+      const r = await api.screenshotsCleanupNow();
+      setCleanupResult(r);
+    } catch (err) {
+      setCleanupError(err.message);
+    } finally {
+      setCleanupRunning(false);
+    }
+  }
+
   return (
     <>
       <div className="stat-cards">
@@ -355,6 +373,40 @@ export default function Settings() {
                     ))}
                   </div>
                 )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header"><div className="panel-title">Screenshot Cleanup</div></div>
+            <div style={{ padding: '10px 16px 14px' }}>
+              <div style={{ fontSize: 11.5, color: '#7a839e', marginBottom: 10 }}>
+                Screenshots older than 31 days are deleted automatically once a day. Run it now to see exactly what it finds/deletes, instead of waiting for the daily run.
+              </div>
+              <button
+                onClick={handleRunCleanup}
+                disabled={cleanupRunning}
+                style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: cleanupRunning ? '#2a2f45' : '#5b46f5', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: cleanupRunning ? 'default' : 'pointer' }}
+              >
+                {cleanupRunning ? 'Running…' : 'Run Cleanup Now'}
+              </button>
+              {cleanupError && <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 10 }}>{cleanupError}</div>}
+              {cleanupResult && (
+                <div style={{ marginTop: 10, fontSize: 12, color: '#c8d0e0', lineHeight: 1.7 }}>
+                  Found {cleanupResult.found} screenshot(s) older than {cleanupResult.retentionDays} days.<br/>
+                  Database: {cleanupResult.dbDeleted} record(s) deleted.<br/>
+                  cPanel files: {cleanupResult.ftpDeleted} deleted
+                  {cleanupResult.ftpFailed?.length > 0 && <span style={{ color: '#fca5a5' }}> · {cleanupResult.ftpFailed.length} failed</span>}
+                  {cleanupResult.noRelativePath > 0 && <span style={{ color: '#f59e0b' }}> · {cleanupResult.noRelativePath} had no stored file path</span>}
+                  .
+                  {cleanupResult.ftpFailed?.length > 0 && (
+                    <div style={{ marginTop: 6, padding: 8, background: '#1a0f10', border: '1px solid #3a1f22', borderRadius: 6, maxHeight: 140, overflowY: 'auto' }}>
+                      {cleanupResult.ftpFailed.slice(0, 20).map((f, i) => (
+                        <div key={i} style={{ fontSize: 11, color: '#fca5a5', fontFamily: 'monospace', wordBreak: 'break-all' }}>{f.relativePath} — {f.error}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

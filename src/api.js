@@ -77,6 +77,11 @@ export const api = {
   screenshotsLatest:  (id)        => request(`/api/screenshots/${id}/latest`),
   screenshotsHistory: (id, page, limit = 24) => request(`/api/screenshots/${id}/history?page=${encodeURIComponent(page)}&limit=${limit}`),
   screenshotsCapture: (id)        => request(`/api/screenshots/${id}/capture`, { method: 'POST' }),
+  // Diagnostic/manual trigger for the 31-day screenshot retention cleanup
+  // (see services/screenshotRetention.js) — runs it right now and returns
+  // exactly what it found/deleted, instead of waiting for the daily
+  // background job and checking server logs.
+  screenshotsCleanupNow: () => request('/api/screenshots/cleanup-now', { method: 'POST' }),
 
   // Re-scan sitemap for real Shop/Contact Us/Track Order slugs (legacy —
   // overwrites monitoredPages with a best-guess; kept for backward compat)
