@@ -5,6 +5,7 @@ import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import AddSiteModal from '../components/AddSiteModal';
+import EditSiteModal from '../components/EditSiteModal';
 import ScoreRing from '../components/ScoreRing';
 import Pagination from '../components/Pagination';
 import { healthStatusMeta } from '../healthStatus';
@@ -1215,12 +1216,18 @@ export default function Sites() {
   const [status, setStatus] = useState('All Status');
   const [tags, setTags] = useState('All Tags');
   const [sitesPage, setSitesPage] = useState(1);
-  // Status/search filters reshuffle which rows match, so jump back to page
-  // 1 — otherwise the user can be left on a page that no longer exists for
-  // the new filtered set.
-  useEffect(() => { setSitesPage(1); }, [status, search]);
+  // Status/search/tags filters reshuffle which rows match, so jump back to
+  // page 1 — otherwise the user can be left on a page that no longer
+  // exists for the new filtered set.
+  useEffect(() => { setSitesPage(1); }, [status, search, tags]);
   const [tab, setTab] = useState('overview');
   const [addOpen, setAddOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState(null); // site object, or null when Edit modal is closed
+  const [badgeList, setBadgeList] = useState([]); // Badge docs, for the "All Tags" filter dropdown
+  const loadBadges = useCallback(() => {
+    api.listBadges().then(r => setBadgeList(r.badges || [])).catch(() => {});
+  }, []);
+  useEffect(() => { loadBadges(); }, [loadBadges]);
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -1381,6 +1388,7 @@ export default function Sites() {
   const filteredRows = rows.filter(r => {
     if (status === 'Live'    && !r.online) return false;
     if (status === 'Offline' && r.online)  return false;
+    if (tags !== 'All Tags' && !(r.raw.tags || []).includes(tags)) return false;
     const q = search.trim().toLowerCase();
     if (q && !`${r.name} ${r.sub}`.toLowerCase().includes(q)) return false;
     return true;
@@ -1441,7 +1449,7 @@ export default function Sites() {
                 <input type="text" placeholder="Search sites..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
               <CustomSelect value={status} onChange={setStatus} options={['All Status', 'Live', 'Offline']} />
-              <CustomSelect value={tags} onChange={setTags} options={['All Tags', 'Main Site', 'E-commerce']} />
+              <CustomSelect value={tags} onChange={setTags} options={['All Tags', ...badgeList.map(b => b.name)]} />
               <button className="add-btn" onClick={() => setAddOpen(true)}>
                 <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add New Site
@@ -1646,6 +1654,7 @@ export default function Sites() {
             <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
             <div style={{ position: 'fixed', top: menu.y, left: menu.x, background: '#0f1729', border: '1px solid #2a3448', borderRadius: 6, padding: 4, minWidth: 160, zIndex: 100, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
               <button onClick={() => { setMenu(null); window.open(s.url, '_blank'); }} style={menuItem}>Open Site ↗</button>
+              <button onClick={() => { setMenu(null); setEditingSite(s); }} style={menuItem}>Edit</button>
               <button onClick={() => handleSyncNow(s._id)} disabled={!!syncingIds[s._id]} style={{ ...menuItem, opacity: syncingIds[s._id] ? 0.5 : 1 }}>
                 {syncingIds[s._id] ? 'Syncing…' : 'Sync Now'}
               </button>
@@ -1656,6 +1665,12 @@ export default function Sites() {
       })()}
 
       <AddSiteModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={() => loadSites()} />
+      <EditSiteModal
+        open={!!editingSite}
+        site={editingSite}
+        onClose={() => setEditingSite(null)}
+        onSaved={() => { loadSites(); loadBadges(); }}
+      />
     </>
   );
 }

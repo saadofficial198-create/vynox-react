@@ -41,6 +41,9 @@ export const api = {
   getSite:     (id)               => request(`/api/sites/${id}`),
   testConnect: ({ url, apiKey })  => request('/api/sites/test', { method: 'POST', body: JSON.stringify({ url, apiKey }) }),
   addSite:     (payload)          => request('/api/sites', { method: 'POST', body: JSON.stringify(payload) }),
+  // Edit modal (Sites list row action) — name and/or badge (see
+  // models/Badge.js, routes/sites.js's PUT /:id). Pass badge: null to clear it.
+  updateSite:  (id, { name, badge } = {}) => request(`/api/sites/${id}`, { method: 'PUT', body: JSON.stringify({ name, badge }) }),
   deleteSite:  (id)               => request(`/api/sites/${id}`, { method: 'DELETE' }),
   latestSnap:  (id)               => request(`/api/sites/${id}/latest`),
   // Manual "Sync Now" row action — pulls this one site's data right now
@@ -115,4 +118,10 @@ export const api = {
   // itself since HttpOnly cookies aren't readable from JS at all.
   authMe:       ()         => request('/api/auth/me'),
   loginHistory: ()         => request('/api/auth/logins'),
+
+  // Site badges/categories ("E Commerce", "Chair", "Home & Lifestyle", ...)
+  // — created/deleted in Settings, assigned to a site via its Edit modal.
+  listBadges:  ()      => request('/api/badges'),
+  createBadge: (name)  => request('/api/badges', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteBadge: (id)    => request(`/api/badges/${id}`, { method: 'DELETE' }),
 };

@@ -87,6 +87,40 @@ export default function Settings() {
       .catch(e => setLoginAttemptsError(e.message));
   }, []);
 
+  // Real data — site badges/categories, assignable to a site from its Edit
+  // modal in the Sites list (see AddSiteModal's sibling, EditSiteModal).
+  const [badges, setBadges] = useState([]);
+  const [newBadgeName, setNewBadgeName] = useState('');
+  const [addingBadge, setAddingBadge] = useState(false);
+  const [badgeError, setBadgeError] = useState(null);
+  const loadBadges = () => api.listBadges().then(r => setBadges(r.badges || [])).catch(() => {});
+  useEffect(() => { loadBadges(); }, []);
+
+  async function handleAddBadge(e) {
+    e.preventDefault();
+    const name = newBadgeName.trim();
+    if (!name || addingBadge) return;
+    setAddingBadge(true); setBadgeError(null);
+    try {
+      await api.createBadge(name);
+      setNewBadgeName('');
+      await loadBadges();
+    } catch (err) {
+      setBadgeError(err.message);
+    } finally {
+      setAddingBadge(false);
+    }
+  }
+
+  async function handleDeleteBadge(id) {
+    try {
+      await api.deleteBadge(id);
+      await loadBadges();
+    } catch (err) {
+      setBadgeError(err.message);
+    }
+  }
+
   return (
     <>
       <div className="stat-cards">
@@ -280,6 +314,47 @@ export default function Settings() {
                   </span>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header"><div className="panel-title">Site Badges</div></div>
+            <div style={{ padding: '10px 16px 14px' }}>
+              <div style={{ fontSize: 11.5, color: '#7a839e', marginBottom: 10 }}>
+                Categories you can assign to a site from its Edit option in the Sites list (e.g. "E Commerce", "Chair", "Home & Lifestyle").
+              </div>
+              <form onSubmit={handleAddBadge} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <input
+                  value={newBadgeName}
+                  onChange={(e) => setNewBadgeName(e.target.value)}
+                  placeholder="New badge name"
+                  style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid #232b3d', background: '#0a1120', color: '#e6e9f0', fontSize: 12.5 }}
+                />
+                <button
+                  type="submit"
+                  disabled={!newBadgeName.trim() || addingBadge}
+                  style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: !newBadgeName.trim() || addingBadge ? '#2a2f45' : '#5b46f5', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: !newBadgeName.trim() || addingBadge ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  {addingBadge ? 'Adding…' : 'Add Badge'}
+                </button>
+              </form>
+              {badgeError && <div style={{ color: '#fca5a5', fontSize: 12, marginBottom: 10 }}>{badgeError}</div>}
+              {badges.length === 0
+                ? <div style={{ color: '#5a6480', fontSize: 12.5 }}>No badges created yet.</div>
+                : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {badges.map((b) => (
+                      <span key={b._id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 6px 5px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: b.color, background: `${b.color}1a`, border: `1px solid ${b.color}40` }}>
+                        {b.name}
+                        <button
+                          onClick={() => handleDeleteBadge(b._id)}
+                          title={`Delete "${b.name}"`}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.08)', color: b.color, fontSize: 11, lineHeight: 1, cursor: 'pointer', padding: 0 }}
+                        >×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
             </div>
           </div>
 
