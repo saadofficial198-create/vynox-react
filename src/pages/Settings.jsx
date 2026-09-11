@@ -4,6 +4,7 @@ import ChartCanvas from '../components/ChartCanvas';
 import CustomSelect from '../components/CustomSelect';
 import Toggle from '../components/Toggle';
 import { useScanner } from '../context/ScannerContext';
+import { useCachedData, useInvalidate } from '../context/DataCache';
 import { api } from '../api';
 import { logout } from '../components/AuthGate';
 import '../styles/settings.css';
@@ -65,6 +66,7 @@ export default function Settings() {
   useEffect(() => { setPageClass('page-settings'); return () => setPageClass(''); }, [setPageClass]);
 
   const { intervalKey, changeInterval } = useScanner();
+  const invalidate = useInvalidate();
 
   const [platformName, setPlatformName] = useState('VYNOX Security Monitor');
   const [timezone, setTimezone] = useState('(UTC +05:00) Asia/Karachi');
@@ -89,12 +91,13 @@ export default function Settings() {
 
   // Real data — site badges/categories, assignable to a site from its Edit
   // modal in the Sites list (see AddSiteModal's sibling, EditSiteModal).
-  const [badges, setBadges] = useState([]);
+  // Shared with that modal and the Sites page's Tags filter via
+  // context/DataCache.jsx, so creating one here updates all three.
+  const { data: badgeData, refresh: loadBadges } = useCachedData('badges');
+  const badges = badgeData || [];
   const [newBadgeName, setNewBadgeName] = useState('');
   const [addingBadge, setAddingBadge] = useState(false);
   const [badgeError, setBadgeError] = useState(null);
-  const loadBadges = () => api.listBadges().then(r => setBadges(r.badges || [])).catch(() => {});
-  useEffect(() => { loadBadges(); }, []);
 
   async function handleAddBadge(e) {
     e.preventDefault();
@@ -116,6 +119,9 @@ export default function Settings() {
     try {
       await api.deleteBadge(id);
       await loadBadges();
+      // Deleting a badge also strips it from every site's tags server-side
+      // (routes/badges.js $pulls it), so the cached site list is now stale.
+      invalidate('sites');
     } catch (err) {
       setBadgeError(err.message);
     }

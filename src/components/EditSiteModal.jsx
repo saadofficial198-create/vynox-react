@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useCachedData } from '../context/DataCache';
 import CustomSelect from './CustomSelect';
 
 const NO_BADGE = 'No Badge';
@@ -12,18 +13,24 @@ const NO_BADGE = 'No Badge';
 export default function EditSiteModal({ open, site, onClose, onSaved }) {
   const [name, setName] = useState('');
   const [badge, setBadge] = useState(NO_BADGE);
-  const [badgeOptions, setBadgeOptions] = useState([NO_BADGE]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // The badge list is already held app-wide (context/DataCache.jsx) — the
+  // Sites page behind this modal reads the very same list for its Tags
+  // filter, so opening this used to re-fetch data that was already on
+  // screen, and the dropdown couldn't be populated until it came back.
+  const { data: badgeData } = useCachedData('badges');
+  const badgeOptions = useMemo(
+    () => [NO_BADGE, ...(badgeData || []).map(b => b.name)],
+    [badgeData]
+  );
 
   useEffect(() => {
     if (!open || !site) return;
     setName(site.name || '');
     setBadge(site.tags?.[0] || NO_BADGE);
     setError(null);
-    api.listBadges()
-      .then(r => setBadgeOptions([NO_BADGE, ...(r.badges || []).map(b => b.name)]))
-      .catch(() => setBadgeOptions([NO_BADGE]));
   }, [open, site]);
 
   if (!open || !site) return null;

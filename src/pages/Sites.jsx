@@ -11,6 +11,7 @@ import Pagination from '../components/Pagination';
 import { healthStatusMeta } from '../healthStatus';
 import { otpStatusMeta } from '../otpStatus';
 import { api } from '../api';
+import { useCachedData, useCachedFetch, useInvalidate } from '../context/DataCache';
 import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/sites.css';
 
@@ -135,7 +136,14 @@ function OverviewTab({ site, snap }) {
   // views, so switching the dropdown below never re-fetches; it only
   // re-buckets this same array client-side (see `history` below), making
   // the toggle instant instead of showing a loading flicker.
-  const [rawHistory, setRawHistory] = useState([]);
+  // Cached per site (context/DataCache.jsx) so returning to the Overview
+  // tab redraws the chart immediately from the last response instead of
+  // re-downloading a week of snapshots on every tab switch.
+  const { data: historyData } = useCachedFetch(
+    site?._id ? `history:${site._id}` : null,
+    useCallback(() => api.siteHistory(site._id, 7).then(r => r.points || []), [site?._id])
+  );
+  const rawHistory = useMemo(() => historyData || [], [historyData]);
   const d = snap?.data || {};
 
   // "Agregga" is VYNOX's own connector-adjacent plugin (the payment plugin
@@ -145,13 +153,6 @@ function OverviewTab({ site, snap }) {
   // vynox_get_plugins_info()), so no backend/plugin change is needed here,
   // just picking it out of the existing list for its own status row.
   const agreggaPlugin = (d.plugins?.plugins || []).find(p => (p.name || '').trim().toLowerCase() === 'agregga');
-
-  useEffect(() => {
-    if (!site?._id) return;
-    api.siteHistory(site._id, 7)
-      .then(r => setRawHistory(r.points || []))
-      .catch(() => setRawHistory([]));
-  }, [site?._id]);
 
   const history = useMemo(
     () => (period === '1 Day' ? bucketHistoryLast24h(rawHistory) : bucketHistoryPerDay(rawHistory)),
@@ -422,34 +423,43 @@ function Imunify360StatusCard({ site, onSaved }) {
 // before this existed. Supports selecting any number of pages (including
 // none of the suggested ones, or more than one page of a similar "kind").
 function MonitoredPagesEditor({ site, onSaved }) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [candidates, setCandidates] = useState([]); // [{ label, path }] from the live sitemap
   const [selected, setSelected] = useState({}); // { [path]: { label, enabled } }
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
-  const load = useCallback(() => {
-    if (!site?._id) return;
-    setLoading(true); setError(null); setSavedMsg(null);
-    api.pageCandidates(site._id)
-      .then((r) => {
-        setCandidates(r.candidates || []);
-        const initial = {};
-        (r.monitoredPages || []).forEach((p) => { initial[p.path] = { label: p.label, enabled: p.enabled !== false, matchStatus: p.matchStatus }; });
-        // Home ('/') is a permanent, locked-in selection — every site gets
-        // screenshots/PageSpeed on its homepage no matter what, whether this
-        // is a brand-new site (no saved selection yet) or one being edited.
-        // Force it into `selected` here (not just visually) so a save right
-        // after load — without touching anything — still includes it.
-        if (!initial['/']) initial['/'] = { label: 'Home', enabled: true };
-        setSelected(initial);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [site?._id]);
+  // Cached per site (context/DataCache.jsx). This call scrapes the target
+  // WordPress site's live sitemap, which makes it by far the slowest
+  // request in the app — and it used to re-run on every single visit to the
+  // Details tab. A sitemap changes on the order of days, so serving the
+  // last response immediately (and refreshing behind it) costs nothing and
+  // removes a multi-second wait from a tab the user may just be glancing at.
+  const { data: pageData, loading, error: loadErr, refresh: load } = useCachedFetch(
+    site?._id ? `pageCandidates:${site._id}` : null,
+    useCallback(() => api.pageCandidates(site._id), [site?._id])
+  );
+  const candidates = useMemo(() => pageData?.candidates || [], [pageData]); // [{ label, path }] from the live sitemap
+  // One slot in the UI shows either failure — loading the sitemap, or
+  // saving a selection. A save error is the more immediate of the two.
+  const error = saveError || loadErr?.message || null;
 
-  useEffect(() => { load(); }, [load]);
+  // Seed the checkbox state from whatever the server says is currently
+  // monitored, whenever a new response arrives (including for a different
+  // site). Keyed on the response identity rather than running inside the
+  // fetch, since the fetch is now shared and may resolve for a component
+  // that didn't initiate it.
+  useEffect(() => {
+    if (!pageData) return;
+    const initial = {};
+    (pageData.monitoredPages || []).forEach((p) => { initial[p.path] = { label: p.label, enabled: p.enabled !== false, matchStatus: p.matchStatus }; });
+    // Home ('/') is a permanent, locked-in selection — every site gets
+    // screenshots/PageSpeed on its homepage no matter what, whether this
+    // is a brand-new site (no saved selection yet) or one being edited.
+    // Force it into `selected` here (not just visually) so a save right
+    // after load — without touching anything — still includes it.
+    if (!initial['/']) initial['/'] = { label: 'Home', enabled: true };
+    setSelected(initial);
+  }, [pageData]);
 
   function toggle(candidate) {
     // Home can never be unchecked — it's a permanent monitored page.
@@ -472,10 +482,10 @@ function MonitoredPagesEditor({ site, onSaved }) {
     const withHome = selected['/'] ? selected : { ...selected, '/': { label: 'Home', enabled: true } };
     const pages = Object.entries(withHome).map(([path, v]) => ({ label: v.label, path, enabled: v.enabled !== false }));
     if (!pages.length) {
-      setError('Select at least one page before saving.');
+      setSaveError('Select at least one page before saving.');
       return;
     }
-    setSaving(true); setError(null); setSavedMsg(null);
+    setSaving(true); setSaveError(null); setSavedMsg(null);
     try {
       await api.saveMonitoredPages(site._id, pages);
       setSavedMsg('Saved — screenshots and PageSpeed checks will use this selection from the next scheduled run.');
@@ -486,7 +496,7 @@ function MonitoredPagesEditor({ site, onSaved }) {
       // only updates its own local candidates/selected state above.
       onSaved?.();
     } catch (e) {
-      setError(e.message);
+      setSaveError(e.message);
     } finally {
       setSaving(false);
     }
@@ -745,7 +755,7 @@ function PageSpeedCard({ pageLabel, pagePath, latest }) {
 // means it survives tab switches and site re-selection, so the button still
 // shows "Checking…" (and the previous scores stay visible instead of being
 // wiped) no matter what the user clicks around to in the meantime.
-function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, setPagesBySite }) {
+function PerformanceTab({ site, checkingSites, setCheckingSites }) {
   const siteId = site?._id;
   // Mobile and Desktop are independent PageSpeedResult documents server-side
   // (see models/PageSpeedResult.js's strategy field), so the frontend keeps
@@ -756,21 +766,20 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
   // same site.
   const [strategy, setStrategy] = useState('mobile');
   const cacheKey = `${siteId}:${strategy}`;
-  const pages = pagesBySite[cacheKey] ?? null;
   const checking = !!checkingSites[cacheKey];
-  const [loading, setLoading] = useState(!pages);
-  const [error, setError] = useState(null);
+  const [runError, setRunError] = useState(null);
 
-  const load = useCallback(() => {
-    if (!siteId) return;
-    setLoading(true);
-    api.pageSpeedLatest(siteId, strategy)
-      .then(r => setPagesBySite(prev => ({ ...prev, [cacheKey]: r.pages || [] })))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [siteId, strategy, cacheKey, setPagesBySite]);
-
-  useEffect(() => { load(); }, [load]);
+  // Results live in the app-wide cache (context/DataCache.jsx) rather than a
+  // pagesBySite map on the Sites page. That map was already keyed exactly
+  // like this, but load() below re-fetched on mount regardless of whether
+  // it held a value — so the cache never actually saved a request. Reading
+  // it through the shared layer means a revisited tab renders from the last
+  // response, and a refresh happens behind it.
+  const { data: pages, loading, error: loadErr, refresh: load } = useCachedFetch(
+    siteId ? `pagespeedPages:${cacheKey}` : null,
+    useCallback(() => api.pageSpeedLatest(siteId, strategy).then(r => r.pages || []), [siteId, strategy])
+  );
+  const error = runError || loadErr?.message || null;
 
   // On mount (including after a page reload, which wipes all React state) or
   // when the toggle switches to a strategy we haven't checked yet in this
@@ -819,10 +828,10 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
 
   async function runCheck() {
     if (!hasCheckablePage) {
-      setError('No monitored pages are selected for this site yet. Go to the Details tab and save at least one page (e.g. Home) before running a check.');
+      setRunError('No monitored pages are selected for this site yet. Go to the Details tab and save at least one page (e.g. Home) before running a check.');
       return;
     }
-    setError(null);
+    setRunError(null);
     try {
       await api.pageSpeedCheck(siteId, strategy); // returns as soon as the run is queued (202) — does not wait for it to finish
       setCheckingSites(prev => ({ ...prev, [cacheKey]: true })); // the poll effect above takes it from here
@@ -830,7 +839,7 @@ function PerformanceTab({ site, checkingSites, setCheckingSites, pagesBySite, se
       // 409 means one was already running (e.g. from another tab/device) —
       // treat it the same as "now checking" instead of surfacing an error.
       if (e.status === 409) setCheckingSites(prev => ({ ...prev, [cacheKey]: true }));
-      else setError(e.message);
+      else setRunError(e.message);
     }
   }
 
@@ -946,35 +955,27 @@ function ScreenshotCard({ pageLabel, pagePath, latest }) {
 }
 
 function ScreenshotsTab({ site }) {
-  const [pages, setPages] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   // IMPORTANT: this must re-fetch whenever the site's saved page selection
   // changes, not just when a different site is picked. It previously
   // depended only on site._id, so after saving a new Monitored Pages
   // selection in the same session (site._id unchanged) this tab kept
   // showing the stale list — e.g. selecting 2 pages still showed the old
-  // 4 boxes until a full page reload. Depending on the actual
-  // monitoredPages content (stringified, since it's an array/object and a
-  // shallow useCallback dep would still not detect in-place mutation)
-  // forces a fresh GET /screenshots/:id/latest any time the selection
-  // itself changes, in addition to switching sites.
+  // 4 boxes until a full page reload. Folding the actual monitoredPages
+  // content (stringified, since it's an array/object and a shallow
+  // comparison would still not detect in-place mutation) into the CACHE KEY
+  // preserves that: a changed selection is a different key, so it fetches
+  // fresh rather than reusing the previous selection's cached response.
   const monitoredPagesKey = JSON.stringify(
     (site?.monitoredPages || []).map(p => [p.label, p.path, p.enabled])
   );
 
-  const load = useCallback(() => {
-    if (!site?._id) return;
-    setLoading(true);
-    api.screenshotsLatest(site._id)
-      .then(r => setPages(r.pages || []))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site?._id, monitoredPagesKey]);
-
-  useEffect(() => { load(); }, [load]);
+  // Captures run 3x/day, so re-downloading this on every visit to the tab
+  // was pure latency — cached per (site, page selection) instead.
+  const { data: pages, loading, error: loadErr } = useCachedFetch(
+    site?._id ? `screenshots:${site._id}:${monitoredPagesKey}` : null,
+    useCallback(() => api.screenshotsLatest(site._id).then(r => r.pages || []), [site?._id])
+  );
+  const error = loadErr?.message || null;
 
   return (
     <div className="sdp-tab-content active">
@@ -1007,20 +1008,14 @@ function ScreenshotsTab({ site }) {
 // snapshot (like Performance/Screenshots tabs), since OTP checks don't
 // depend on the daily security scan having run.
 function OtpCheckerTab({ site }) {
-  const [checks, setChecks] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(() => {
-    if (!site?._id) return;
-    setLoading(true); setError(null);
-    api.otpCheckHistory(90, site._id)
-      .then(r => setChecks(r.checks || []))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [site?._id]);
-
-  useEffect(() => { load(); }, [load]);
+  // 90 days of history, cached per site — the underlying job runs twice a
+  // day, so re-downloading the whole window on every tab visit was wasted
+  // time for data that cannot have changed.
+  const { data: checks, loading, error: loadErr } = useCachedFetch(
+    site?._id ? `otpHistory:${site._id}` : null,
+    useCallback(() => api.otpCheckHistory(90, site._id).then(r => r.checks || []), [site?._id])
+  );
+  const error = loadErr?.message || null;
 
   return (
     <div className="sdp-tab-content active">
@@ -1080,20 +1075,17 @@ function OtpCheckerTab({ site }) {
 // below instead of through the shared snap-gated TabBody path.
 function UrlCheckerTab({ site }) {
   const [oldDomain, setOldDomain] = useState('');
-  const [check, setCheck] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState(null);
+  const [startError, setStartError] = useState(null);
 
-  const load = useCallback(() => {
-    if (!site?._id) return;
-    api.urlCheckLatest(site._id)
-      .then(r => setCheck(r.check))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [site?._id]);
-
-  useEffect(() => { load(); }, [load]);
+  // Cached per site — the result only changes when the user explicitly
+  // starts a run, so revisiting this tab should show the last result
+  // immediately rather than re-fetching it first.
+  const { data: check, loading, error: loadErr, refresh: load } = useCachedFetch(
+    site?._id ? `urlCheck:${site._id}` : null,
+    useCallback(() => api.urlCheckLatest(site._id).then(r => r.check), [site?._id])
+  );
+  const error = startError || loadErr?.message || null;
 
   // A scan can take minutes on a large catalog — poll while it's running so
   // progress (scannedPages/totalPages) updates without a manual refresh.
@@ -1106,12 +1098,12 @@ function UrlCheckerTab({ site }) {
   async function startCheck() {
     const domain = oldDomain.trim();
     if (!domain || !site?._id) return;
-    setStarting(true); setError(null);
+    setStarting(true); setStartError(null);
     try {
       await api.urlCheckRun(site._id, domain);
       await load();
     } catch (e) {
-      setError(e.message);
+      setStartError(e.message);
     } finally {
       setStarting(false);
     }
@@ -1223,17 +1215,24 @@ export default function Sites() {
   const [tab, setTab] = useState('overview');
   const [addOpen, setAddOpen] = useState(false);
   const [editingSite, setEditingSite] = useState(null); // site object, or null when Edit modal is closed
-  const [badgeList, setBadgeList] = useState([]); // Badge docs, for the "All Tags" filter dropdown
-  const loadBadges = useCallback(() => {
-    api.listBadges().then(r => setBadgeList(r.badges || [])).catch(() => {});
-  }, []);
-  useEffect(() => { loadBadges(); }, [loadBadges]);
-  const [sites, setSites] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+  // Badge docs, for the "All Tags" filter dropdown — shared with Settings
+  // and EditSiteModal (see context/DataCache.jsx).
+  const { data: badgeData, refresh: loadBadges } = useCachedData('badges');
+  const badgeList = useMemo(() => badgeData || [], [badgeData]);
+
+  // The site list, shared with Dashboard/Scans/Topbar. This replaces a
+  // loadSites useCallback whose dependency array contained `selectedId` —
+  // which made it re-run (and re-download the whole list) every time the
+  // user clicked a different site row, and once more on mount right after
+  // it auto-selected the first site. Clicking a row cost four requests
+  // instead of one.
+  const { data: sitesData, loading, error: sitesError, refresh: refreshSites } = useCachedData('sites');
+  const sites = useMemo(() => sitesData || [], [sitesData]);
+  const loadError = sitesError?.message || null;
+  const loadSites = refreshSites;
+  const invalidate = useInvalidate();
+
   const [selectedId, setSelectedId] = useState(null);
-  const [snap, setSnap] = useState(null);
-  const [snapLoading, setSnapLoading] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
   const [syncingIds, setSyncingIds] = useState({}); // { [siteId]: boolean } — "Sync Now" row action in progress
 
@@ -1241,7 +1240,6 @@ export default function Sites() {
   // an in-flight PageSpeed check survives switching tabs or selecting a
   // different site — see the comment on PerformanceTab for why this matters.
   const [checkingSites, setCheckingSites] = useState({}); // { [siteId]: boolean }
-  const [pagesBySite, setPagesBySite] = useState({}); // { [siteId]: pages[] }
 
   const anyChecking = Object.values(checkingSites).some(Boolean);
   useEffect(() => {
@@ -1257,49 +1255,37 @@ export default function Sites() {
   // we fetch it once and tally it into { [siteId]: count } ourselves. This
   // used to be read off site.latest.alerts, a field that never existed,
   // which is why the column always showed "—".
-  const [alertCounts, setAlertCounts] = useState(null); // null = not loaded yet
-  // Raw active-alert rows from the backend (GET /api/alerts), kept as-is so
-  // the site detail page's Alerts tab (below) can list the exact same
-  // alerts the "Alerts" column/tab-header count is based on — it used to
-  // recompute its own (smaller, out-of-sync) list from the snapshot instead.
-  const [allAlerts, setAllAlerts] = useState([]);
-  const loadAlertCounts = useCallback(() => {
-    api.listAlerts()
-      .then((r) => {
-        setAllAlerts(r.alerts || []);
-        const counts = {};
-        // Only count "high" severity alerts here — medium/low items (plugin
-        // updates, site-health "recommended" notices, etc.) already have
-        // their own signal (the Updates column, or the Alerts page itself),
-        // so folding them into this column made it look like every site had
-        // a pile of real problems when most of the count was routine noise.
-        (r.alerts || []).forEach((a) => {
-          if (a.severity !== 'high') return;
-          counts[a.siteId] = (counts[a.siteId] || 0) + 1;
-        });
-        setAlertCounts(counts);
-      })
-      .catch(() => {}); // leave alertCounts/allAlerts as-is — column falls back to "—"
-  }, []);
+  // Raw active-alert rows from the backend (GET /api/alerts), shared with
+  // Dashboard/Alerts/Topbar — kept as-is so the site detail page's Alerts
+  // tab (below) can list the exact same alerts the "Alerts" column/tab-header
+  // count is based on; it used to recompute its own (smaller, out-of-sync)
+  // list from the snapshot instead. Refreshed on the cache's own shared
+  // 30s poll rather than a fourth private interval.
+  const { data: alertsData, refresh: loadAlertCounts } = useCachedData('alerts');
+  const allAlerts = useMemo(() => alertsData || [], [alertsData]);
+  // null = not loaded yet, so the column can show "—" rather than "0".
+  const alertCounts = useMemo(() => {
+    if (!alertsData) return null;
+    const counts = {};
+    // Only count "high" severity alerts here — medium/low items (plugin
+    // updates, site-health "recommended" notices, etc.) already have their
+    // own signal (the Updates column, or the Alerts page itself), so folding
+    // them into this column made it look like every site had a pile of real
+    // problems when most of the count was routine noise.
+    alertsData.forEach((a) => {
+      if (a.severity !== 'high') return;
+      counts[a.siteId] = (counts[a.siteId] || 0) + 1;
+    });
+    return counts;
+  }, [alertsData]);
+
+  // Auto-select the first site once the list arrives. Split out of the old
+  // loadSites callback deliberately: having the selection live inside the
+  // fetch function meant selecting a site changed that function's identity,
+  // which re-triggered the fetch effect — see the note on `sites` above.
   useEffect(() => {
-    loadAlertCounts();
-    // Refresh periodically too, same reasoning as homePerfScores below —
-    // alerts can change (new one detected, one resolved) without the user
-    // reloading the page.
-    const interval = setInterval(loadAlertCounts, 30000);
-    return () => clearInterval(interval);
-  }, [loadAlertCounts]);
-
-  const loadSites = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const r = await api.listSites();
-      setSites(r.sites || []);
-      if ((r.sites || []).length && !selectedId) setSelectedId(r.sites[0]._id);
-    } catch (e) { setLoadError(e.message); } finally { setLoading(false); }
-  }, [selectedId]);
-
-  useEffect(() => { loadSites(); }, [loadSites]);
+    if (!selectedId && sites.length) setSelectedId(sites[0]._id);
+  }, [sites, selectedId]);
 
   // Home-page PageSpeed performance score for the "All Sites" list, shown
   // next to the Health Status badge. Fetched via ONE batched call per
@@ -1309,42 +1295,29 @@ export default function Sites() {
   // and queuing for 10+ seconds each (confirmed live in the Network tab).
   // See routes/pagespeed.js's /latest-all + perfScore.js's
   // resolveHomePerfScoresBatch.
-  const [homePerfScores, setHomePerfScores] = useState({}); // { [siteId]: number|null }
-  useEffect(() => {
-    let cancelled = false;
+  // Shared with Dashboard and Scans (context/DataCache.jsx), and no longer
+  // gated on the site list having arrived first — these two requests don't
+  // depend on it, so making them wait only delayed this column.
+  const { data: desktopScores } = useCachedData('pagespeed:desktop');
+  const { data: mobileScores }  = useCachedData('pagespeed:mobile');
+  const homePerfScores = useMemo(
+    () => resolveHomePerfScoresBatch(sites.map(s => s._id), desktopScores || {}, mobileScores || {}),
+    [sites, desktopScores, mobileScores]
+  );
 
-    // Re-fetches on an interval (not just once per page load) so a score
-    // that finishes computing after this page was opened still shows up
-    // without needing a manual refresh.
-    function fetchAll() {
-      const siteIds = sites.map(s => s._id);
-      Promise.all([
-        api.pageSpeedLatestAll('desktop').catch(() => ({ scores: {} })),
-        api.pageSpeedLatestAll('mobile').catch(() => ({ scores: {} })),
-      ]).then(([desktop, mobile]) => {
-        if (cancelled) return;
-        setHomePerfScores(resolveHomePerfScoresBatch(siteIds, desktop.scores, mobile.scores));
-      });
-    }
-
-    fetchAll();
-    // Re-check every 30s — cheap (2 requests total, regardless of site
-    // count) and means a score that finishes computing after this page was
-    // opened appears on its own, matching the "dashboard should just work
-    // without me manually re-checking" expectation.
-    const interval = setInterval(fetchAll, 30000);
-    return () => { cancelled = true; clearInterval(interval); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sites]);
-
-  useEffect(() => {
-    if (!selectedId) { setSnap(null); return; }
-    setSnapLoading(true); setSnap(null);
-    api.latestSnap(selectedId)
-      .then(r => setSnap(r.snapshot))
-      .catch(() => setSnap(null))
-      .finally(() => setSnapLoading(false));
-  }, [selectedId, sites]);
+  // The selected site's snapshot, powering the whole right-hand panel.
+  //
+  // Two things used to make this feel slow. It was keyed on [selectedId,
+  // sites], so any incidental refresh of the site list re-fetched it; and
+  // it called setSnap(null) before every fetch, blanking the panel to a
+  // loading state each time. Cached per site id now, so clicking back to a
+  // site you already viewed renders its panel from the first frame while
+  // any newer data arrives behind it.
+  const snapKey = selectedId ? `snap:${selectedId}` : null;
+  const { data: snap, loading: snapLoading, refresh: refreshSnap } = useCachedFetch(
+    snapKey,
+    useCallback(() => api.latestSnap(selectedId).then(r => r.snapshot), [selectedId])
+  );
 
   useEffect(() => {
     if (!menu) return;
@@ -1360,6 +1333,9 @@ export default function Sites() {
     try {
       await api.deleteSite(id);
       if (selectedId === id) setSelectedId(null);
+      // Drop everything cached for a site that no longer exists, so a
+      // re-added site reusing the id can't ever render the old one's data.
+      invalidate(`snap:${id}`, `history:${id}`, `pageCandidates:${id}`, `otpHistory:${id}`, `urlCheck:${id}`);
       await loadSites();
     } catch (e) { alert('Delete failed: ' + e.message); }
   }
@@ -1372,11 +1348,13 @@ export default function Sites() {
       await api.syncSite(id);
       // Refreshes lastSyncedAt/status/latest/PHP/WP for this row.
       await loadSites();
-      // Also kick off an immediate alert-count refresh (fire-and-forget —
-      // loadAlertCounts doesn't return its promise) instead of waiting up
-      // to 30s for its own poll interval — the sync just changed the exact
-      // data alerts are derived from.
+      // Also kick off an immediate alert-count refresh instead of waiting up
+      // to 30s for the shared poll — the sync just changed the exact data
+      // alerts are derived from. Same for this site's cached snapshot, which
+      // the sync has just made stale.
       loadAlertCounts();
+      if (id === selectedId) refreshSnap();
+      else invalidate(`snap:${id}`);
     } catch (e) {
       alert('Sync failed: ' + e.message);
     } finally {
@@ -1592,8 +1570,6 @@ export default function Sites() {
                       site={selected}
                       checkingSites={checkingSites}
                       setCheckingSites={setCheckingSites}
-                      pagesBySite={pagesBySite}
-                      setPagesBySite={setPagesBySite}
                     />
                   )}
                   {tab === 'screenshots' && <TabBody site={selected} snap={snap} />}

@@ -3,7 +3,7 @@ import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
-import { api } from '../api';
+import { useCachedData } from '../context/DataCache';
 import Pagination from '../components/Pagination';
 import '../styles/alerts.css';
 
@@ -377,9 +377,12 @@ export default function Alerts() {
   const { setPageClass } = usePage();
   useEffect(() => { setPageClass('page-alerts'); return () => setPageClass(''); }, [setPageClass]);
 
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+  // Shared with Dashboard, Sites and the always-mounted Topbar (see
+  // context/DataCache.jsx) — four components each used to fetch this same
+  // list independently.
+  const { data: alertsData, loading, error } = useCachedData('alerts');
+  const alerts = useMemo(() => alertsData || [], [alertsData]);
+  const loadError = error?.message || null;
 
   const [selectedAlert, setSelectedAlert] = useState(null);
 
@@ -394,14 +397,6 @@ export default function Alerts() {
   // the user was on may no longer exist (or may now show a confusing mix) —
   // always land back on page 1 when the filtered set changes.
   useEffect(() => { setPage(1); }, [tab, search, site, type, status]);
-
-  useEffect(() => {
-    setLoading(true);
-    api.listAlerts()
-      .then(r => setAlerts(r.alerts || []))
-      .catch(e => setLoadError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
 
   const counts = useMemo(() => {
     const c = { total: alerts.length, high: 0, medium: 0, low: 0, resolved: 0 };

@@ -6,7 +6,7 @@ import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import ScoreRing from '../components/ScoreRing';
 import Pagination from '../components/Pagination';
-import { api } from '../api';
+import { useCachedData } from '../context/DataCache';
 import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/scans.css';
 
@@ -31,10 +31,15 @@ export default function Scans() {
   const { setPageClass } = usePage();
   useEffect(() => { setPageClass('page-scans'); return () => setPageClass(''); }, [setPageClass]);
 
-  const [scans, setScans]     = useState([]);
-  const [sites, setSites]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setErr]   = useState(null);
+  // Shared with Dashboard/Sites/Topbar via context/DataCache.jsx — these
+  // were private fetches that re-downloaded the identical scan and site
+  // lists every time this page was opened.
+  const { data: scansData, loading: scansLoading, error: scansError, refresh: refreshScans } = useCachedData('scans');
+  const { data: sitesData, loading: sitesLoading, error: sitesError, refresh: refreshSites } = useCachedData('sites');
+  const scans = useMemo(() => scansData || [], [scansData]);
+  const sites = useMemo(() => sitesData || [], [sitesData]);
+  const loading = scansLoading || sitesLoading;
+  const loadError = (scansError || sitesError)?.message || null;
 
   const [tab, setTab]     = useState('all');
   const [search, setSearch] = useState('');
@@ -56,14 +61,9 @@ export default function Scans() {
   // exists for the new filtered set.
   useEffect(() => { setPage(1); }, [tab, search, siteF]);
 
-  const load = () => {
-    setLoading(true);
-    Promise.all([api.listScans(), api.listSites()])
-      .then(([s, st]) => { setScans(s.scans || []); setSites(st.sites || []); })
-      .catch(e => setErr(e.message))
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => { load(); }, []);
+  // The "Refresh" button / Quick Action — forces both shared lists to be
+  // re-fetched from the server rather than served from cache.
+  const load = () => { refreshScans(); refreshSites(); };
 
   // Home-page PageSpeed Performance score per site, for the Health Status
   // column — same ScoreRing shared with Dashboard.jsx and Sites.jsx, polled
@@ -76,23 +76,17 @@ export default function Scans() {
   // the old per-site loop fired 2 requests per site every 30s, which at 47
   // sites overwhelmed the browser's per-origin connection limit and queued
   // every request for 10+ seconds (confirmed live in the Network tab).
-  const [homePerfScores, setHomePerfScores] = useState({});
-  useEffect(() => {
-    let cancelled = false;
-    function fetchAll() {
-      const siteIds = sites.map(s => s._id);
-      Promise.all([
-        api.pageSpeedLatestAll('desktop').catch(() => ({ scores: {} })),
-        api.pageSpeedLatestAll('mobile').catch(() => ({ scores: {} })),
-      ]).then(([desktop, mobile]) => {
-        if (cancelled) return;
-        setHomePerfScores(resolveHomePerfScoresBatch(siteIds, desktop.scores, mobile.scores));
-      });
-    }
-    if (sites.length) fetchAll();
-    const interval = setInterval(fetchAll, 30000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [sites]);
+  // Shared with Dashboard and Sites (see context/DataCache.jsx) — all three
+  // pages used to run their own identical pair of requests on their own 30s
+  // timer. They also used to wait on this page's scan+site fetch before
+  // starting, which delayed the Health Status column for no reason; these
+  // requests depend on neither.
+  const { data: desktopScores } = useCachedData('pagespeed:desktop');
+  const { data: mobileScores }  = useCachedData('pagespeed:mobile');
+  const homePerfScores = useMemo(
+    () => resolveHomePerfScoresBatch(sites.map(s => s._id), desktopScores || {}, mobileScores || {}),
+    [sites, desktopScores, mobileScores]
+  );
 
   const counts = useMemo(() => {
     const c = { total: scans.length, completed: 0, failed: 0, suspicious: 0, totalFiles: 0 };

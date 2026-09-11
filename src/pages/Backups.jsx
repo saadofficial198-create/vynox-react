@@ -3,7 +3,7 @@ import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
-import { api } from '../api';
+import { useCachedData } from '../context/DataCache';
 import '../styles/backups.css';
 
 function fmtParts(iso) {
@@ -20,23 +20,18 @@ export default function Backups() {
   const { setPageClass } = usePage();
   useEffect(() => { setPageClass('page-backups'); return () => setPageClass(''); }, [setPageClass]);
 
-  const [backups, setBackups] = useState([]);
-  const [summary, setSummary] = useState({ totalSites: 0, success: 0, failed: 0, pending: 0, totalBackupSize: '0 B', totalBackupBytes: 0, diskFreeFmt: '—', diskTotalFmt: '—', diskUsedPct: null });
-  const [loading, setLoading] = useState(true);
-  const [loadError, setErr] = useState(null);
+  // Shared with the Dashboard's "Backups OK" card (context/DataCache.jsx) —
+  // both used to fetch this identically and independently.
+  const { data: backupsData, loading, error, refresh } = useCachedData('backups');
+  const backups = useMemo(() => backupsData?.backups || [], [backupsData]);
+  const summary = backupsData?.summary || {};
+  const loadError = error?.message || null;
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('All Status');
   const [expanded, setExpanded] = useState(null);
 
-  const load = () => {
-    setLoading(true);
-    api.listBackups()
-      .then(r => { setBackups(r.backups || []); setSummary(r.summary || {}); })
-      .catch(e => setErr(e.message))
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => { load(); }, []);
+  const load = refresh; // "Refresh" button / Quick Action
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();

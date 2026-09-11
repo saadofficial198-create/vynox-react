@@ -4,7 +4,7 @@ import ChartCanvas from '../components/ChartCanvas';
 import Sparkline from '../components/Sparkline';
 import CustomSelect from '../components/CustomSelect';
 import Pagination from '../components/Pagination';
-import { api } from '../api';
+import { useCachedData } from '../context/DataCache';
 import '../styles/updates.css';
 
 const UPDATES_PAGE_SIZE = 10;
@@ -22,9 +22,12 @@ export default function Updates() {
   const { setPageClass } = usePage();
   useEffect(() => { setPageClass('page-updates'); return () => setPageClass(''); }, [setPageClass]);
 
-  const [updates, setUpdates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+  // Cached app-wide (context/DataCache.jsx) so returning to this page
+  // renders instantly from the last response while a fresh one loads
+  // behind it, instead of showing an empty table every time.
+  const { data: updatesData, loading, error, refresh } = useCachedData('updates');
+  const updates = useMemo(() => updatesData || [], [updatesData]);
+  const loadError = error?.message || null;
 
   const [search, setSearch] = useState('');
   const [site, setSite] = useState('All Sites');
@@ -37,14 +40,7 @@ export default function Updates() {
   // page 1 — otherwise the user can land on a page that no longer exists.
   useEffect(() => { setPage(1); }, [search, site, type, sev, status]);
 
-  const load = () => {
-    setLoading(true);
-    api.listUpdates()
-      .then(r => setUpdates(r.updates || []))
-      .catch(e => setLoadError(e.message))
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => { load(); }, []);
+  const load = refresh; // "Refresh" button / Quick Action
 
   const counts = useMemo(() => {
     const c = { total: updates.length, high: 0, medium: 0, low: 0, core: 0, plugin: 0, theme: 0 };

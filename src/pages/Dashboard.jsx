@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import ScoreRing from '../components/ScoreRing';
 import { otpStatusMeta } from '../otpStatus';
-import { api } from '../api';
+import { useCachedData } from '../context/DataCache';
 import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/dashboard.css';
 
@@ -41,25 +41,25 @@ export default function Dashboard() {
   const { setPageClass } = usePage();
   useEffect(() => { setPageClass('page-dashboard'); return () => setPageClass(''); }, [setPageClass]);
 
-  const [sites, setSites]     = useState([]);
-  const [alerts, setAlerts]   = useState([]);
-  const [scans, setScans]     = useState([]);
-  const [backups, setBackups] = useState({ summary: {}, backups: [] });
-  const [loading, setLoading] = useState(true);
-  const [otpChecks, setOtpChecks]   = useState([]); // one latest check per site
-  const [otpLoading, setOtpLoading] = useState(true);
+  // All shared with the rest of the app (see context/DataCache.jsx). These
+  // used to be a Promise.all of four private fetches that started only once
+  // this page mounted — and ran a second time the moment the user came back
+  // to it. Now the cache already holds them (prefetched at app boot), so
+  // this page renders populated on its first frame, and the four requests
+  // it does still make are shared with Sites/Scans/Backups/Topbar rather
+  // than duplicated per page.
+  const { data: sitesData,   loading: sitesLoading }   = useCachedData('sites');
+  const { data: alertsData,  loading: alertsLoading }  = useCachedData('alerts');
+  const { data: scansData,   loading: scansLoading }   = useCachedData('scans');
+  const { data: backupsData, loading: backupsLoading } = useCachedData('backups');
+  const { data: otpData,     loading: otpLoading }     = useCachedData('otpLatest');
 
-  useEffect(() => {
-    Promise.all([api.listSites(), api.listAlerts(), api.listScans(), api.listBackups()])
-      .then(([s, a, sc, b]) => { setSites(s.sites || []); setAlerts(a.alerts || []); setScans(sc.scans || []); setBackups(b); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-
-    api.otpCheckLatest()
-      .then((latest) => setOtpChecks(latest.checks || []))
-      .catch(() => {})
-      .finally(() => setOtpLoading(false));
-  }, []);
+  const sites  = useMemo(() => sitesData  || [], [sitesData]);
+  const alerts = useMemo(() => alertsData || [], [alertsData]);
+  const scans  = useMemo(() => scansData  || [], [scansData]);
+  const otpChecks = useMemo(() => otpData || [], [otpData]);
+  const backups = useMemo(() => backupsData || { summary: {}, backups: [] }, [backupsData]);
+  const loading = sitesLoading || alertsLoading || scansLoading || backupsLoading;
 
   const stats = useMemo(() => {
     const good     = sites.filter(s => s.latest?.status === 'good').length;
@@ -103,23 +103,19 @@ export default function Dashboard() {
   // per-site loop fired 94 requests every 30s, and the browser's
   // ~6-connections-per-origin limit turned that into a queue backing up
   // 10+ seconds per request (confirmed live in the Network tab).
-  const [homePerfScores, setHomePerfScores] = useState({});
-  useEffect(() => {
-    let cancelled = false;
-    function fetchAll() {
-      const siteIds = sites.map(s => s._id);
-      Promise.all([
-        api.pageSpeedLatestAll('desktop').catch(() => ({ scores: {} })),
-        api.pageSpeedLatestAll('mobile').catch(() => ({ scores: {} })),
-      ]).then(([desktop, mobile]) => {
-        if (cancelled) return;
-        setHomePerfScores(resolveHomePerfScoresBatch(siteIds, desktop.scores, mobile.scores));
-      });
-    }
-    if (sites.length) fetchAll();
-    const interval = setInterval(fetchAll, 30000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [sites]);
+  // Both strategies now start fetching at app boot alongside the site list
+  // instead of waiting for it. They used to sit in an effect keyed on
+  // [sites], so the Health Status column couldn't even begin loading until
+  // the sites request had fully resolved — which is exactly why the table
+  // appeared first and this column filled in visibly later. They're
+  // independent requests; nothing about them needs the site list, which is
+  // only used afterwards to decide which rows to resolve a score for.
+  const { data: desktopScores } = useCachedData('pagespeed:desktop');
+  const { data: mobileScores }  = useCachedData('pagespeed:mobile');
+  const homePerfScores = useMemo(
+    () => resolveHomePerfScoresBatch(sites.map(s => s._id), desktopScores || {}, mobileScores || {}),
+    [sites, desktopScores, mobileScores]
+  );
 
   const STAT_CARDS = [
     { iconCls: 'si-blue',    icon: <><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>, label: 'Total Sites', value: stats.totalSites, sub: 'All Connected Sites', sparkId: 'grad-3b82f6', color: '#3b82f6', points: '2,22 12,18 22,20 32,14 42,16 52,12 66,14' },

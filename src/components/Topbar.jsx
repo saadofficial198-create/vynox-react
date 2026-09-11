@@ -1,28 +1,18 @@
-import { useState, useEffect } from 'react';
-import { api } from '../api';
+import { useMemo } from 'react';
+import { useCachedData } from '../context/DataCache';
 
 /* Daily automated health check runs via GitHub Actions cron, 2x/day at 12:00 AM and 12:00 PM PKT (fixed schedule). */
 const DAILY_CHECK_TIME = '12:00 AM / 12:00 PM';
 
+// Reads the SHARED site list rather than fetching its own copy. The Topbar
+// is mounted on every route, so its old private listSites() fired
+// simultaneously with whatever the page underneath was fetching — two
+// identical requests on every page load. Now both read one cached value
+// (see context/DataCache.jsx).
 function UptimeCountdown() {
-  const [onlineCount, setOnlineCount] = useState(null);
-  const [totalCount,  setTotalCount]  = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchCounts = async () => {
-      try {
-        const r = await api.listSites();
-        const sites = r.sites || [];
-        if (cancelled) return;
-        setTotalCount(sites.length);
-        setOnlineCount(sites.filter(s => s.status === 'online').length);
-      } catch { /* ignore */ }
-    };
-    fetchCounts();
-    const timer = setInterval(fetchCounts, 5 * 60 * 1000); // refresh every 5 minutes
-    return () => { cancelled = true; clearInterval(timer); };
-  }, []);
+  const { data: sites } = useCachedData('sites');
+  const totalCount = sites ? sites.length : null;
+  const onlineCount = sites ? sites.filter(s => s.status === 'online').length : null;
 
   return (
     <div className="uptime-pill" title="Daily automated health check">
@@ -61,25 +51,14 @@ function Subhead({ meta }) {
   return <div className="topbar-sub">{meta.subtitle || ''}</div>;
 }
 
+// Same as UptimeCountdown above — shares the app-wide alert list instead of
+// fetching a second copy alongside whatever page is open.
 function useActiveAlertCount() {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchCount = async () => {
-      try {
-        const r = await api.listAlerts();
-        if (cancelled) return;
-        const alerts = r.alerts || [];
-        setCount(alerts.filter(a => a.status === 'active').length);
-      } catch { /* ignore */ }
-    };
-    fetchCount();
-    const timer = setInterval(fetchCount, 5 * 60 * 1000); // refresh every 5 minutes
-    return () => { cancelled = true; clearInterval(timer); };
-  }, []);
-
-  return count;
+  const { data: alerts } = useCachedData('alerts');
+  return useMemo(
+    () => (alerts || []).filter(a => a.status === 'active').length,
+    [alerts]
+  );
 }
 
 export default function Topbar({ meta = {}, onSearch }) {
