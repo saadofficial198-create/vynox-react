@@ -392,18 +392,25 @@ export default function Settings() {
               {cleanupError && <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 10 }}>{cleanupError}</div>}
               {cleanupResult && (
                 <div style={{ marginTop: 10, fontSize: 12, color: '#c8d0e0', lineHeight: 1.7 }}>
-                  Found {cleanupResult.found} screenshot(s) older than {cleanupResult.retentionDays} days.<br/>
-                  Database: {cleanupResult.dbDeleted} record(s) deleted.<br/>
-                  cPanel files: {cleanupResult.ftpDeleted} deleted
-                  {cleanupResult.ftpFailed?.length > 0 && <span style={{ color: '#fca5a5' }}> · {cleanupResult.ftpFailed.length} failed</span>}
-                  {cleanupResult.noRelativePath > 0 && <span style={{ color: '#f59e0b' }}> · {cleanupResult.noRelativePath} had no stored file path</span>}
+                  <div style={{ fontWeight: 600, color: '#e2e8f0', marginTop: 4 }}>Pass 1 — DB-tracked screenshots</div>
+                  Found {cleanupResult.dbPass.found} older than {cleanupResult.retentionDays} days.<br/>
+                  Database: {cleanupResult.dbPass.dbDeleted} record(s) deleted.<br/>
+                  cPanel files: {cleanupResult.dbPass.ftpDeleted} deleted
+                  {cleanupResult.dbPass.ftpFailed?.length > 0 && <span style={{ color: '#fca5a5' }}> · {cleanupResult.dbPass.ftpFailed.length} failed</span>}
+                  {cleanupResult.dbPass.noRelativePath > 0 && <span style={{ color: '#f59e0b' }}> · {cleanupResult.dbPass.noRelativePath} had no stored file path</span>}
                   .
-                  {cleanupResult.ftpFailed?.length > 0 && (
-                    <div style={{ marginTop: 6, padding: 8, background: '#1a0f10', border: '1px solid #3a1f22', borderRadius: 6, maxHeight: 140, overflowY: 'auto' }}>
-                      {cleanupResult.ftpFailed.slice(0, 20).map((f, i) => (
-                        <div key={i} style={{ fontSize: 11, color: '#fca5a5', fontFamily: 'monospace', wordBreak: 'break-all' }}>{f.relativePath} — {f.error}</div>
-                      ))}
-                    </div>
+                  {cleanupResult.dbPass.ftpFailed?.length > 0 && (
+                    <FailedList items={cleanupResult.dbPass.ftpFailed} />
+                  )}
+
+                  <div style={{ fontWeight: 600, color: '#e2e8f0', marginTop: 10 }}>Pass 2 — orphan files (no DB record)</div>
+                  Scanned {cleanupResult.orphanPass.totalFiles} file(s) on cPanel — {cleanupResult.orphanPass.found} were older than {cleanupResult.retentionDays} days with no matching database record.<br/>
+                  Deleted {cleanupResult.orphanPass.deleted}
+                  {cleanupResult.orphanPass.failed?.length > 0 && <span style={{ color: '#fca5a5' }}> · {cleanupResult.orphanPass.failed.length} failed</span>}
+                  {cleanupResult.orphanPass.unparseable > 0 && <span style={{ color: '#f59e0b' }}> · {cleanupResult.orphanPass.unparseable} file(s) had an unrecognized name and were left alone</span>}
+                  .
+                  {cleanupResult.orphanPass.failed?.length > 0 && (
+                    <FailedList items={cleanupResult.orphanPass.failed} />
                   )}
                 </div>
               )}
@@ -462,5 +469,15 @@ export default function Settings() {
         </div>
       </div>
     </>
+  );
+}
+
+function FailedList({ items }) {
+  return (
+    <div style={{ marginTop: 6, padding: 8, background: '#1a0f10', border: '1px solid #3a1f22', borderRadius: 6, maxHeight: 140, overflowY: 'auto' }}>
+      {items.slice(0, 20).map((f, i) => (
+        <div key={i} style={{ fontSize: 11, color: '#fca5a5', fontFamily: 'monospace', wordBreak: 'break-all' }}>{f.relativePath} — {f.error}</div>
+      ))}
+    </div>
   );
 }
