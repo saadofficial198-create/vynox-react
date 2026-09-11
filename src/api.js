@@ -41,9 +41,12 @@ export const api = {
   getSite:     (id)               => request(`/api/sites/${id}`),
   testConnect: ({ url, apiKey })  => request('/api/sites/test', { method: 'POST', body: JSON.stringify({ url, apiKey }) }),
   addSite:     (payload)          => request('/api/sites', { method: 'POST', body: JSON.stringify(payload) }),
-  // Edit modal (Sites list row action) — name and/or badge (see
-  // models/Badge.js, routes/sites.js's PUT /:id). Pass badge: null to clear it.
-  updateSite:  (id, { name, badge } = {}) => request(`/api/sites/${id}`, { method: 'PUT', body: JSON.stringify({ name, badge }) }),
+  // Edit modal (Sites list row action) — name, badge, and whether the OTP
+  // delivery monitor applies to this site at all (see models/Badge.js,
+  // models/Site.js's otpCheckEnabled, routes/sites.js's PUT /:id). Pass
+  // badge: null to clear it.
+  updateSite:  (id, { name, badge, otpCheckEnabled } = {}) =>
+    request(`/api/sites/${id}`, { method: 'PUT', body: JSON.stringify({ name, badge, otpCheckEnabled }) }),
   deleteSite:  (id)               => request(`/api/sites/${id}`, { method: 'DELETE' }),
   latestSnap:  (id)               => request(`/api/sites/${id}/latest`),
   // Manual "Sync Now" row action — pulls this one site's data right now

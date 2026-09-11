@@ -1016,19 +1016,31 @@ function OtpCheckerTab({ site }) {
     useCallback(() => api.otpCheckHistory(90, site._id).then(r => r.checks || []), [site?._id])
   );
   const error = loadErr?.message || null;
+  const otpDisabled = site?.otpCheckEnabled === false;
 
   return (
     <div className="sdp-tab-content active">
       <div className="sdp-block-head">
         <div className="sdp-block-title">OTP Email Delivery Checks</div>
       </div>
-      <div style={{ fontSize: 11.5, color: '#7a839e', margin: '0 0 12px' }}>
-        Runs automatically 2x/day (~12:00 AM and ~12:00 PM PKT) — verifies this site's checkout OTP email actually gets delivered, end to end. A "Blocked (Imunify360)" result means the site's own hosting firewall rejected the check as bot traffic, not that OTP delivery itself is broken — see the Imunify360 Allowlist Status card in the Details tab to resolve it.
-      </div>
+
+      {/* A site the user has marked as "not a shop" — say so plainly rather
+          than showing an empty history that reads like something is broken.
+          Past results (if any) still render below, since they're real
+          history from when the monitor was running. */}
+      {otpDisabled ? (
+        <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '10px 12px', margin: '0 0 12px' }}>
+          The OTP monitor is turned off for this site — it isn&apos;t a shop, so there&apos;s no checkout to send an OTP from. Turn it back on from the Sites list&apos;s Edit option if that changes.
+        </div>
+      ) : (
+        <div style={{ fontSize: 11.5, color: '#7a839e', margin: '0 0 12px' }}>
+          Runs automatically 2x/day (~12:00 AM and ~12:00 PM PKT) — verifies this site&apos;s checkout OTP email actually gets delivered, end to end. A &quot;Blocked (Imunify360)&quot; result means the site&apos;s own hosting firewall rejected the check as bot traffic, not that OTP delivery itself is broken — see the Imunify360 Allowlist Status card in the Details tab to resolve it.
+        </div>
+      )}
 
       {loading && <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>Loading…</div>}
       {!loading && error && <div style={{ padding: 16, color: '#fca5a5', fontSize: 13 }}>{error}</div>}
-      {!loading && !error && (!checks || checks.length === 0) && (
+      {!loading && !error && (!checks || checks.length === 0) && !otpDisabled && (
         <div style={{ padding: 16, color: '#7a839e', fontSize: 13 }}>No OTP checks recorded yet for this site.</div>
       )}
 

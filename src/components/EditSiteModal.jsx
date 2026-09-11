@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useCachedData } from '../context/DataCache';
 import CustomSelect from './CustomSelect';
+import Toggle from './Toggle';
 
 const NO_BADGE = 'No Badge';
 
@@ -13,6 +14,10 @@ const NO_BADGE = 'No Badge';
 export default function EditSiteModal({ open, site, onClose, onSaved }) {
   const [name, setName] = useState('');
   const [badge, setBadge] = useState(NO_BADGE);
+  // Whether the OTP email-delivery monitor applies to this site at all —
+  // see models/Site.js's otpCheckEnabled. Not every monitored site is a
+  // shop; a brochure or blog site has no checkout to send an OTP from.
+  const [otpEnabled, setOtpEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -30,6 +35,10 @@ export default function EditSiteModal({ open, site, onClose, onSaved }) {
     if (!open || !site) return;
     setName(site.name || '');
     setBadge(site.tags?.[0] || NO_BADGE);
+    // Sites saved before this field existed have it absent, not false —
+    // treat that as on, matching the schema default and the behaviour
+    // those sites already had.
+    setOtpEnabled(site.otpCheckEnabled !== false);
     setError(null);
   }, [open, site]);
 
@@ -40,7 +49,11 @@ export default function EditSiteModal({ open, site, onClose, onSaved }) {
     if (!trimmed) { setError('Site name cannot be empty'); return; }
     setSaving(true); setError(null);
     try {
-      const r = await api.updateSite(site._id, { name: trimmed, badge: badge === NO_BADGE ? null : badge });
+      const r = await api.updateSite(site._id, {
+        name: trimmed,
+        badge: badge === NO_BADGE ? null : badge,
+        otpCheckEnabled: otpEnabled,
+      });
       onSaved?.(r.site);
       onClose?.();
     } catch (e) {
@@ -68,6 +81,16 @@ export default function EditSiteModal({ open, site, onClose, onSaved }) {
           <Field label="Badge" hint="Manage the badge list in Settings → Site Badges">
             <CustomSelect value={badge} onChange={setBadge} options={badgeOptions} />
           </Field>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: '#a7b0c8', fontWeight: 500 }}>OTP Delivery Monitor</div>
+              <div style={{ fontSize: 11, color: '#5a6480', marginTop: 4 }}>
+                Turn this off for sites that aren&apos;t shops — there&apos;s no checkout to send an OTP from, so the twice-daily check has nothing to test.
+              </div>
+            </div>
+            <Toggle checked={otpEnabled} onChange={setOtpEnabled} />
+          </div>
 
           {error && <div style={testErr}><strong>Error:</strong> {error}</div>}
         </div>
