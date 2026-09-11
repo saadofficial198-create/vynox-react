@@ -82,6 +82,10 @@ export const api = {
   // exactly what it found/deleted, instead of waiting for the daily
   // background job and checking server logs.
   screenshotsCleanupNow: () => request('/api/screenshots/cleanup-now', { method: 'POST' }),
+  // Diagnostic PREVIEW of orphan files (files on cPanel with NO MongoDB
+  // record) WITHOUT deleting anything. Lists filenames, sizes, timestamps
+  // so the user can decide whether to delete.
+  screenshotsOrphansDetect: () => request('/api/screenshots/orphans-detect'),
   // One-time migration for the folder-fragmentation bug (a site rename used
   // to create a new cPanel screenshot folder instead of reusing the same
   // one) — see services/screenshotMigration.js. Safe to run more than once.

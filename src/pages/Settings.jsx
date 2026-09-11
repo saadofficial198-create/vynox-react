@@ -158,6 +158,24 @@ export default function Settings() {
     }
   }
 
+  // Diagnostic: detect orphan files (files on cPanel with NO MongoDB
+  // record) WITHOUT deleting anything — show the user exactly what will
+  // be deleted before they confirm it.
+  const [orphansRunning, setOrphansRunning] = useState(false);
+  const [orphansResult, setOrphansResult] = useState(null);
+  const [orphansError, setOrphansError] = useState(null);
+  async function handleDetectOrphans() {
+    setOrphansRunning(true); setOrphansError(null); setOrphansResult(null);
+    try {
+      const r = await api.screenshotsOrphansDetect();
+      setOrphansResult(r);
+    } catch (err) {
+      setOrphansError(err.message);
+    } finally {
+      setOrphansRunning(false);
+    }
+  }
+
   return (
     <>
       <div className="stat-cards">
@@ -392,6 +410,54 @@ export default function Settings() {
                     ))}
                   </div>
                 )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header"><div className="panel-title">Detect Orphan Screenshots</div></div>
+            <div style={{ padding: '10px 16px 14px' }}>
+              <div style={{ fontSize: 11.5, color: '#7a839e', marginBottom: 10 }}>
+                PREVIEW: Find all screenshot files on cPanel that have NO matching database record, without deleting anything. Use this before running destructive cleanup to see exactly what will be deleted.
+              </div>
+              <button
+                onClick={handleDetectOrphans}
+                disabled={orphansRunning}
+                style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: orphansRunning ? '#2a2f45' : '#8b5cf6', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: orphansRunning ? 'default' : 'pointer' }}
+              >
+                {orphansRunning ? 'Scanning…' : 'Scan for Orphan Files'}
+              </button>
+              {orphansError && <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 10 }}>{orphansError}</div>}
+              {orphansResult && (
+                <div style={{ marginTop: 10, fontSize: 12, color: '#c8d0e0', lineHeight: 1.7 }}>
+                  <div style={{ fontWeight: 600, color: '#e2e8f0' }}>
+                    Total files on cPanel: {orphansResult.totalFiles}
+                  </div>
+                  <div style={{ fontWeight: 600, color: '#e2e8f0', marginTop: 4 }}>
+                    Registered in database: {orphansResult.registeredInDb}
+                  </div>
+                  <div style={{ fontWeight: 600, color: '#e2e8f0', marginTop: 4 }}>
+                    Orphaned files: {orphansResult.orphaned.length}
+                    {orphansResult.unparseable > 0 && <span style={{ color: '#f59e0b' }}> + {orphansResult.unparseable} with unrecognized filename</span>}
+                  </div>
+                  {orphansResult.orphaned.length > 0 && (
+                    <div style={{ marginTop: 10, padding: 10, background: '#0f1419', border: '1px solid #2a3f5f', borderRadius: 6, maxHeight: 220, overflowY: 'auto' }}>
+                      <div style={{ fontSize: 11, color: '#7a839e', marginBottom: 8, fontWeight: 600 }}>Files to be deleted (sorted newest first):</div>
+                      {orphansResult.orphaned.slice(0, 50).map((f, i) => (
+                        <div key={i} style={{ fontSize: 11, color: '#c8d0e0', fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 6, paddingBottom: 6, borderBottom: i < Math.min(orphansResult.orphaned.length - 1, 49) ? '1px solid rgba(90,100,128,0.12)' : 'none' }}>
+                          <div><strong>{f.name}</strong></div>
+                          <div style={{ color: '#7a839e', fontSize: 10 }}>
+                            {(f.size / 1024).toFixed(1)} KB · Captured: {new Date(f.capturedDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <div style={{ color: '#5a6480', fontSize: 10 }}>Path: {f.relativePath}</div>
+                        </div>
+                      ))}
+                      {orphansResult.orphaned.length > 50 && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 8 }}>… and {orphansResult.orphaned.length - 50} more</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
