@@ -82,6 +82,10 @@ export const api = {
   // exactly what it found/deleted, instead of waiting for the daily
   // background job and checking server logs.
   screenshotsCleanupNow: () => request('/api/screenshots/cleanup-now', { method: 'POST' }),
+  // One-time migration for the folder-fragmentation bug (a site rename used
+  // to create a new cPanel screenshot folder instead of reusing the same
+  // one) — see services/screenshotMigration.js. Safe to run more than once.
+  screenshotsMergeFoldersNow: () => request('/api/screenshots/merge-folders-now', { method: 'POST' }),
 
   // Re-scan sitemap for real Shop/Contact Us/Track Order slugs (legacy —
   // overwrites monitoredPages with a best-guess; kept for backward compat)

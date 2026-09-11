@@ -139,6 +139,25 @@ export default function Settings() {
     }
   }
 
+  // One-time migration for the folder-fragmentation bug (renaming a site
+  // used to create a new cPanel screenshot folder instead of reusing the
+  // same one — see services/screenshotMigration.js). Safe to click more
+  // than once; a site with nothing left to move is just skipped.
+  const [mergeRunning, setMergeRunning] = useState(false);
+  const [mergeResult, setMergeResult] = useState(null);
+  const [mergeError, setMergeError] = useState(null);
+  async function handleMergeFolders() {
+    setMergeRunning(true); setMergeError(null); setMergeResult(null);
+    try {
+      const r = await api.screenshotsMergeFoldersNow();
+      setMergeResult(r);
+    } catch (err) {
+      setMergeError(err.message);
+    } finally {
+      setMergeRunning(false);
+    }
+  }
+
   return (
     <>
       <div className="stat-cards">
@@ -411,6 +430,38 @@ export default function Settings() {
                   .
                   {cleanupResult.orphanPass.failed?.length > 0 && (
                     <FailedList items={cleanupResult.orphanPass.failed} />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header"><div className="panel-title">Merge Screenshot Folders</div></div>
+            <div style={{ padding: '10px 16px 14px' }}>
+              <div style={{ fontSize: 11.5, color: '#7a839e', marginBottom: 10 }}>
+                Renaming a site used to create a brand new cPanel folder for its screenshots instead of reusing the same one (now fixed — see Sites list's Edit option). Run this once to move each site's older screenshots into its current folder. Safe to run more than once.
+              </div>
+              <button
+                onClick={handleMergeFolders}
+                disabled={mergeRunning}
+                style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: mergeRunning ? '#2a2f45' : '#5b46f5', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: mergeRunning ? 'default' : 'pointer' }}
+              >
+                {mergeRunning ? 'Merging…' : 'Merge Old Screenshot Folders'}
+              </button>
+              {mergeError && <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 10 }}>{mergeError}</div>}
+              {mergeResult && (
+                <div style={{ marginTop: 10, fontSize: 12, color: '#c8d0e0', lineHeight: 1.7 }}>
+                  Checked {mergeResult.sitesChecked} site(s) — {mergeResult.sitesWithMoves} had screenshots in an old folder.<br/>
+                  Moved {mergeResult.filesMoved} file(s) into their site's current folder
+                  {mergeResult.failed?.length > 0 && <span style={{ color: '#fca5a5' }}> · {mergeResult.failed.length} failed</span>}
+                  .
+                  {mergeResult.failed?.length > 0 && (
+                    <div style={{ marginTop: 6, padding: 8, background: '#1a0f10', border: '1px solid #3a1f22', borderRadius: 6, maxHeight: 140, overflowY: 'auto' }}>
+                      {mergeResult.failed.slice(0, 20).map((f, i) => (
+                        <div key={i} style={{ fontSize: 11, color: '#fca5a5', fontFamily: 'monospace', wordBreak: 'break-all' }}>{f.from} → {f.to} — {f.error}</div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
