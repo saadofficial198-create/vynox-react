@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { usePage } from '../components/Layout';
 import ChartCanvas from '../components/ChartCanvas';
 import ScoreRing from '../components/ScoreRing';
-import { otpStatusMeta } from '../otpStatus';
+import { isImunify360Block } from '../otpStatus';
 import { useCachedData } from '../context/DataCache';
 import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/dashboard.css';
@@ -20,10 +20,6 @@ function Sparkline({ id, color, points }) {
 function alertCls(n) { return n === 0 ? 'an-green' : n >= 6 ? 'an-red' : 'an-orange'; }
 function updCls(n)   { return n === 0 ? 'upd-gray' : 'upd-orange'; }
 
-function otpDotCls(check) {
-  if (!check) return 'hs-unknown';
-  return otpStatusMeta(check).cls;
-}
 function relTime(iso) {
   if (!iso) return 'Never';
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -72,6 +68,29 @@ export default function Dashboard() {
     const scans7d = scans.filter(s => s.date && (Date.now() - new Date(s.date).getTime() < 7 * 86400000)).length;
     return { totalSites: sites.length, good, warning, critical, needsAttention, totalAlerts: alerts.length, high, med, low, scans7d, backupsOk: backups.summary?.success || 0 };
   }, [sites, alerts, scans, backups]);
+
+  // OTP delivery outcomes across every site, for the donut beside "Alerts by
+  // Severity". Three buckets rather than the raw overallStatus values,
+  // because what matters at a glance is "is OTP delivery working, is
+  // something blocking our monitor, or did the check itself not complete":
+  //   Success — the email actually arrived (overallStatus 'pass')
+  //   Blocked — the site's own hosting firewall rejected the monitor as bot
+  //             traffic. NOT an OTP fault, and deliberately separated so a
+  //             wall of "Blocked" can't be mistaken for broken checkouts
+  //             (see otpStatus.js / Imunify360_Allowlist_Guide.md).
+  //   Error   — everything else: plugin inactive, SMTP unconfigured, email
+  //             never received, or the check errored out.
+  // Sites with the OTP monitor switched off never appear here at all — the
+  // backend omits them from /api/otp-check/latest entirely.
+  const otpStats = useMemo(() => {
+    let success = 0, blocked = 0, error = 0;
+    for (const c of otpChecks) {
+      if (isImunify360Block(c.popupError)) blocked++;
+      else if (c.overallStatus === 'pass') success++;
+      else error++;
+    }
+    return { success, blocked, error, total: success + blocked + error };
+  }, [otpChecks]);
 
   // Per-site active-alert count for the Sites Overview table below. GET
   // /api/alerts (already fetched into `alerts`) returns one row per active
@@ -125,37 +144,22 @@ export default function Dashboard() {
     { iconCls: 'si-emerald', icon: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></>, label: 'Backups OK', value: `${stats.backupsOk} / ${stats.totalSites}`, sub: backups.summary?.totalBackupSize ? `${backups.summary.totalBackupSize} total` : '—', sparkId: 'grad-10b981', color: '#10b981', points: '2,18 12,22 22,16 32,18 42,12 52,14 66,10' },
   ];
 
-  const lineChartConfig = useMemo(() => (ctx) => {
-    const gradCrit = ctx.createLinearGradient(0, 0, 0, 185);
-    gradCrit.addColorStop(0, 'rgba(239,68,68,0.3)'); gradCrit.addColorStop(1, 'rgba(239,68,68,0.0)');
-    const gradRec = ctx.createLinearGradient(0, 0, 0, 185);
-    gradRec.addColorStop(0, 'rgba(245,158,11,0.25)'); gradRec.addColorStop(1, 'rgba(245,158,11,0.0)');
-    // Bucket scans by day → total critical + recommended issue counts across all sites that day
-    const days = []; const criticalData = []; const recommendedData = [];
-    for (let i = 6; i >= 0; i--) {
-      const dt = new Date(Date.now() - i * 86400000);
-      days.push(dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-      const scansThatDay = scans.filter(s => { const d = new Date(s.date); return d.toDateString() === dt.toDateString(); });
-      criticalData.push(scansThatDay.length ? scansThatDay.reduce((a, b) => a + (b.critical || 0), 0) : null);
-      recommendedData.push(scansThatDay.length ? scansThatDay.reduce((a, b) => a + (b.recommended || 0), 0) : null);
-    }
-    return {
-      type: 'line',
-      data: { labels: days, datasets: [
-        { label: 'Critical', data: criticalData, borderColor: '#ef4444', backgroundColor: gradCrit, tension: 0.42, fill: true, pointBackgroundColor: '#ef4444', pointRadius: 4, borderWidth: 2.2, spanGaps: true },
-        { label: 'Recommended', data: recommendedData, borderColor: '#f59e0b', backgroundColor: gradRec, tension: 0.42, fill: true, pointBackgroundColor: '#f59e0b', pointRadius: 4, borderWidth: 2.2, spanGaps: true },
-      ] },
-      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2840', titleColor: '#e2e8f0', bodyColor: '#7a839e', borderColor: '#2a3448', borderWidth: 1 } }, scales: { x: { grid: { color: 'rgba(30,37,53,0.8)' }, ticks: { color: '#5a6480' } }, y: { min: 0, grid: { color: 'rgba(30,37,53,0.8)' }, ticks: { color: '#5a6480', stepSize: 1 } } } },
-    };
-  }, [scans]);
-
   const donutChartConfig = useMemo(() => ({
     type: 'doughnut',
     data: { datasets: [{ data: [stats.high, stats.med, stats.low], backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6'], borderWidth: 0, hoverOffset: 4 }] },
     options: { responsive: false, cutout: '70%', animation: false, plugins: { legend: { display: false } } },
   }), [stats.high, stats.med, stats.low]);
 
+  // Same shape/options as donutChartConfig above — the two panels sit side
+  // by side and should read as a matched pair.
+  const otpDonutConfig = useMemo(() => ({
+    type: 'doughnut',
+    data: { datasets: [{ data: [otpStats.success, otpStats.blocked, otpStats.error], backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'], borderWidth: 0, hoverOffset: 4 }] },
+    options: { responsive: false, cutout: '70%', animation: false, plugins: { legend: { display: false } } },
+  }), [otpStats.success, otpStats.blocked, otpStats.error]);
+
   const pct = (n) => stats.totalAlerts ? ((n / stats.totalAlerts) * 100).toFixed(1) : '0';
+  const otpPct = (n) => otpStats.total ? ((n / otpStats.total) * 100).toFixed(1) : '0';
   const sitesTop5 = sites.slice(0, 5);
 
   return (
@@ -233,61 +237,32 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="panel" style={{ marginBottom: 14 }}>
-            <div className="panel-header">
-              <div className="panel-title">OTP Email Delivery</div>
-            </div>
-            <div style={{ padding: '14px 18px' }}>
-              {otpLoading && <div style={{ color: '#7a839e', fontSize: 13 }}>Loading…</div>}
-              {!otpLoading && otpChecks.length === 0 && (
-                <div style={{ color: '#7a839e', fontSize: 13 }}>No OTP checks recorded yet.</div>
-              )}
-              {!otpLoading && otpChecks.map((check) => {
-                const meta = otpStatusMeta(check);
-                return (
-                  <div key={check._id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(90,100,128,0.15)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <span style={{ color: '#e2e8f0', fontSize: 13, minWidth: 120 }}>{check.siteName || check.siteUrl}</span>
-                      <span className={`health-badge ${otpDotCls(check)}`}>
-                        <span className="health-dot" />
-                        {meta.label}
-                      </span>
-                      <span style={{ color: '#7a839e', fontSize: 12 }}>
-                        Last checked: {check.checkedAt ? `${relTime(check.checkedAt)} · ${fmtDate(check.checkedAt)}` : 'Never'}
-                      </span>
-                    </div>
-                    {meta.reason && (
-                      <div style={{ marginTop: 4, color: check.overallStatus === 'not_applicable' ? '#5a6480' : '#f59e0b', fontSize: 12.5 }}>
-                        {meta.reason}
-                      </div>
-                    )}
-                    {check.overallStatus === 'pass' && typeof check.deliveryLatencyMs === 'number' && (
-                      <div style={{ marginTop: 4, color: '#22c55e', fontSize: 12.5 }}>
-                        Delivered in {(check.deliveryLatencyMs / 1000).toFixed(1)}s
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mid-row" style={{ marginBottom: 14 }}>
-            <div className="panel chart-panel">
-              <div className="chart-inner">
-                <div className="chart-header"><div className="panel-title">Issues (Last 7 Days)</div></div>
-                <div className="chart-canvas-wrap">
-                  {scans.length > 0 && <ChartCanvas config={lineChartConfig} />}
-                  {scans.length === 0 && <div style={{ padding: 30, color: '#7a839e', textAlign: 'center' }}>No scans yet</div>}
+          {/* Two matching donuts, equal width. The OTP panel replaced a
+              full-width per-site status table that grew a row per site and
+              pushed everything below it off-screen; the counts are what's
+              actually scannable here, and the per-site detail still lives on
+              each site's own OTP Checker tab. */}
+          <div className="donut-row" style={{ marginBottom: 14 }}>
+            <div className="panel donut-panel-half">
+              <div className="panel-header"><div className="panel-title">OTP Email Delivery</div></div>
+              <div className="donut-inner">
+                <div className="donut-wrap">
+                  {otpStats.total > 0 && <ChartCanvas config={otpDonutConfig} width={140} height={140} />}
+                  <div className="donut-center"><div className="donut-num">{otpStats.total}</div><div className="donut-lbl">Sites Checked</div></div>
                 </div>
-                <div className="chart-legend-row">
-                  <div className="chart-legend-dot" style={{ background: '#ef4444' }} />Critical
-                  <div className="chart-legend-dot" style={{ background: '#f59e0b', marginLeft: 14 }} />Recommended
+                <div className="donut-legend">
+                  <div className="dl-row"><div className="dl-dot" style={{ background: '#22c55e' }} /><div className="dl-name">Success</div><div className="dl-val">{otpStats.success}</div><div className="dl-pct">({otpPct(otpStats.success)}%)</div></div>
+                  <div className="dl-row"><div className="dl-dot" style={{ background: '#f59e0b' }} /><div className="dl-name">Blocked</div><div className="dl-val">{otpStats.blocked}</div><div className="dl-pct">({otpPct(otpStats.blocked)}%)</div></div>
+                  <div className="dl-row"><div className="dl-dot" style={{ background: '#ef4444' }} /><div className="dl-name">Error</div><div className="dl-val">{otpStats.error}</div><div className="dl-pct">({otpPct(otpStats.error)}%)</div></div>
                 </div>
               </div>
+              {otpLoading && <div style={{ padding: '0 18px 14px', color: '#7a839e', fontSize: 12.5 }}>Loading…</div>}
+              {!otpLoading && otpStats.total === 0 && (
+                <div style={{ padding: '0 18px 14px', color: '#7a839e', fontSize: 12.5 }}>No OTP checks recorded yet.</div>
+              )}
             </div>
 
-            <div className="panel donut-panel">
+            <div className="panel donut-panel-half">
               <div className="panel-header"><div className="panel-title">Alerts by Severity</div></div>
               <div className="donut-inner">
                 <div className="donut-wrap">
