@@ -14,6 +14,10 @@ const TYPE_ICONS = {
   SSL:              { cls: 'ac-blue',  d: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></> },
   'Login Security': { cls: 'ac-red',   d: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> },
   Server:           { cls: 'ac-teal',  d: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></> },
+  // Risky-by-design plugins (file managers etc.) — see
+  // services/riskyPlugins.js. Shield-with-warning, red like Malware, since
+  // this is a standing compromise risk rather than a config nit.
+  Vulnerability:    { cls: 'ac-red',   d: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="15" x2="12.01" y2="15"/></> },
 };
 
 const ALERTS_PAGE_SIZE = 10;
@@ -222,6 +226,29 @@ const SOLUTIONS = {
 
 function getSolution(alert) {
   if (SOLUTIONS[alert.name]) return SOLUTIONS[alert.name];
+  // Risky-by-design plugins (services/riskyPlugins.js). The alert name
+  // carries the specific plugin ("File Manager Plugin Installed: WP File
+  // Manager"), so this can't be a plain SOLUTIONS key.
+  if (alert.name.startsWith('File Manager Plugin Installed:')) {
+    const pluginName = alert.name.replace('File Manager Plugin Installed: ', '');
+    return {
+      summary: `"${pluginName}" lets anyone who reaches it browse, edit, upload and delete any file on the server from a browser. That makes a single flaw in it equal to full site takeover — which is exactly what happened to WP File Manager in 2020 (CVE-2020-25213), mass-exploited in the wild with the exploit code still public today. The safest state for a file manager plugin is "not installed".`,
+      steps: [
+        'Check whether anyone actually needs it — cPanel File Manager and SFTP do the same job without exposing anything through the website',
+        'If it is not needed: WordPress Admin → Plugins → Deactivate, then DELETE it',
+        'Deleting matters — deactivating leaves the plugin\'s PHP files on disk, still reachable by direct URL. That is how CVE-2020-25213 was exploited',
+        'If it genuinely is needed, update it to the latest version first, and delete it again once the task is done',
+        'If the site may already have been compromised, scan for malware and check wp-content/uploads for stray .php files',
+      ],
+      plugins: [
+        { name: 'Wordfence Security', desc: 'Scan for backdoors left behind if this plugin was already exploited', url: 'https://wordpress.org/plugins/wordfence/' },
+      ],
+      links: [
+        { label: 'CVE-2020-25213 — WP File Manager RCE, exploited in the wild', url: 'https://www.sonicwall.com/blog/cve-2020-25213-wordpress-plugin-wp-file-manager-actively-being-exploited-in-the-wild' },
+        { label: 'WPScan — File Manager known vulnerabilities', url: 'https://wpscan.com/plugin/wp-file-manager/' },
+      ],
+    };
+  }
   if (alert.name.startsWith('Plugin Update:')) {
     const pluginName = alert.name.replace('Plugin Update: ', '');
     return {
