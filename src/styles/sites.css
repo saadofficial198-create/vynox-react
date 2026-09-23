@@ -9,19 +9,53 @@
 .stat-cards { flex-wrap: nowrap; }
 .stat-card { min-width: 0; }
 
-/* ===== SPLIT LAYOUT ===== */
-.split-row { display: flex; gap: 14px; align-items: flex-start; }
-.split-left {
-  flex: 1; min-width: 0;
-  display: flex; flex-direction: column; gap: 14px;
+/* ===== SITE DETAIL OVERLAY =====
+   The detail view used to be a fixed 640px column beside the table
+   (.split-right). At 100% browser zoom that left the table itself too
+   cramped to read, and the column could not simply be narrowed without
+   squeezing the detail content instead. It is now a slide-in overlay: the
+   table gets the full page width, and the detail panel is summoned by
+   clicking a row and dismissed by the backdrop, the ✕, or Escape. */
+.sites-main { display: flex; flex-direction: column; gap: 14px; }
+
+.sdp-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(7, 11, 22, 0.6);
+  backdrop-filter: blur(2px);
+  animation: sdp-fade .18s ease-out;
 }
-.split-right {
-  /* Widened from 530px — the Latest Scan Summary/Quick Actions boxes below
-     the preview card (see SiteQuickPanel) need more than 530px to sit
-     side-by-side without feeling cramped. */
-  width: 640px; min-width: 640px; flex-shrink: 0;
-  display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px;
-  position: sticky; top: 0; align-self: flex-start;
+
+.sdp-overlay {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 201;
+  width: min(720px, 92vw);
+  background: #070b16;
+  border-left: 1px solid #1e2535;
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5);
+  /* Its own scroll context: the panel is usually taller than the viewport,
+     and the page behind it is scroll-locked while it's open (see
+     Sites.jsx) so the two can't fight over the wheel. */
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  animation: sdp-slide .22s cubic-bezier(.22, 1, .36, 1);
+}
+
+.sdp-close {
+  position: sticky; top: 0; align-self: flex-end; z-index: 1;
+  width: 30px; height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid #2a3448; border-radius: 6px;
+  background: #0f1729; color: #c8d0e0;
+  font-size: 14px; line-height: 1; cursor: pointer;
+}
+.sdp-close:hover { background: #1a2338; color: #fff; }
+
+@keyframes sdp-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sdp-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+/* Respect a reduced-motion preference — a full-height panel flying in is
+   exactly the kind of large movement that setting exists to suppress. */
+@media (prefers-reduced-motion: reduce) {
+  .sdp-backdrop, .sdp-overlay { animation: none; }
 }
 
 /* ===== SITES TABLE PANEL ===== */
@@ -265,9 +299,11 @@
 .overview-bottom-grid { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
 /* ===== RESPONSIVE ===== */
-@media (max-width: 1280px) {
-  .split-row { flex-direction: column; }
-  .split-right { width: 100%; min-width: 0; position: static; }
+/* Below this the overlay takes the full screen rather than sitting as a
+   side sheet — at phone width a 92vw panel with a sliver of backdrop
+   behind it reads as broken rather than as a deliberate overlay. */
+@media (max-width: 700px) {
+  .sdp-overlay { width: 100vw; left: 0; border-left: none; }
 }
 @media (max-width: 1100px) {
   .stat-cards { flex-wrap: wrap; }

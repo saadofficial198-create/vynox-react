@@ -238,14 +238,11 @@ function OverviewTab({ site, snap }) {
   );
 }
 
-// "Latest Scan Summary" + "Quick Actions" — rendered right below the
-// site-detail preview card (.sdp), but still inside .split-right (same
-// column, same width as the card above it — NOT spanning under the sites
-// table on the left). .split-right was widened from 530px to 640px (see
-// sites.css) so these two side-by-side boxes have enough room without
-// feeling cramped. Living outside .sdp's own tab-content area also means
-// these two boxes stay visible regardless of which tab is open above,
-// rather than only on Overview.
+// "Latest Scan Summary" + "Quick Actions" — rendered inside the detail
+// overlay, directly below the site-detail card (.sdp). Living outside
+// .sdp's own tab-content area means these two boxes stay visible
+// regardless of which tab is open above them, rather than only on
+// Overview.
 function SiteQuickPanel({ site, snap, setTab, syncing, onSyncNow }) {
   const navigate = useNavigate();
   const d = snap?.data || {};
@@ -1291,13 +1288,31 @@ export default function Sites() {
     return counts;
   }, [alertsData]);
 
-  // Auto-select the first site once the list arrives. Split out of the old
-  // loadSites callback deliberately: having the selection live inside the
-  // fetch function meant selecting a site changed that function's identity,
-  // which re-triggered the fetch effect — see the note on `sites` above.
+  // Deliberately NO auto-select of the first site. The detail view is an
+  // overlay panel now, not a permanently-visible right-hand column, so
+  // pre-selecting a site would mean the page opens with the overlay
+  // already covering the table the user came to look at. Selection is
+  // driven purely by the user clicking a row.
+
+  // Close the overlay on Escape, the same as clicking the backdrop. Bound
+  // only while something is actually selected so this isn't listening on
+  // every page render for a key it would ignore.
   useEffect(() => {
-    if (!selectedId && sites.length) setSelectedId(sites[0]._id);
-  }, [sites, selectedId]);
+    if (!selectedId) return;
+    const onKey = (e) => { if (e.key === 'Escape') setSelectedId(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId]);
+
+  // The page behind a scrollable overlay must not scroll with it — without
+  // this, scrolling the panel to its end carries on scrolling the sites
+  // table underneath, which loses the user's place in the list.
+  useEffect(() => {
+    if (!selectedId) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [selectedId]);
 
   // Home-page PageSpeed performance score for the "All Sites" list, shown
   // next to the Health Status badge. Fetched via ONE batched call per
@@ -1428,8 +1443,13 @@ export default function Sites() {
         </div></div>
       </div>
 
-      <div className="split-row">
-        <div className="split-left">
+      {/* The sites table is now the whole page — the site detail view moved
+          into a slide-in overlay below, rather than sitting permanently in
+          a fixed-width right-hand column. At 100% browser zoom that column
+          left the table too narrow to read, and it could not be given up
+          without losing the detail view entirely. */}
+      <div className="sites-main">
+        <div>
           <div className="panel">
             <div className="sites-panel-header"><div className="sites-panel-title">All Sites</div></div>
 
@@ -1522,13 +1542,16 @@ export default function Sites() {
           </div>
         </div>
 
-        <div className="split-right">
+        {/* Slide-in detail overlay. Rendered only when a site is actually
+            selected — an always-mounted panel kept off-screen would keep
+            every tab's data subscribed and polling for a site nobody is
+            looking at. */}
+        {selected && (
+          <>
+            <div className="sdp-backdrop" onClick={() => setSelectedId(null)} />
+            <div className="sdp-overlay" role="dialog" aria-modal="true" aria-label={`${selected.name} details`}>
+              <button className="sdp-close" onClick={() => setSelectedId(null)} aria-label="Close details">✕</button>
           <div className="sdp">
-            {!selected && (
-              <div style={{ padding: 40, color: '#7a839e', textAlign: 'center' }}>
-                Click the <strong style={{ color: '#5b46f5' }}>👁 Preview</strong> button on any site to view its details here.
-              </div>
-            )}
             {selected && (
               <>
                 <div className="sdp-header">
@@ -1617,20 +1640,18 @@ export default function Sites() {
             )}
           </div>
 
-          {/* Right below the site preview card, still inside .split-right
-              (same column, same width) — not spanning under the sites
-              table on the left. Stays visible no matter which tab is open
-              above it. */}
-          {selected && (
-            <SiteQuickPanel
-              site={selected}
-              snap={snap}
-              setTab={setTab}
-              syncing={!!syncingIds[selected._id]}
-              onSyncNow={handleSyncNow}
-            />
-          )}
-        </div>
+          {/* Below the preview card, inside the same overlay — stays
+              visible no matter which tab is open above it. */}
+          <SiteQuickPanel
+            site={selected}
+            snap={snap}
+            setTab={setTab}
+            syncing={!!syncingIds[selected._id]}
+            onSyncNow={handleSyncNow}
+          />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Fixed-position dropdown menu (escapes table overflow) */}
