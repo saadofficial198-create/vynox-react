@@ -22,8 +22,9 @@
   position: fixed; inset: 0; z-index: 200;
   background: rgba(7, 11, 22, 0.6);
   backdrop-filter: blur(2px);
-  animation: sdp-fade .18s ease-out;
+  animation: sdp-fade .3s ease-out;
 }
+.sdp-backdrop.closing { animation: sdp-fade-out .28s ease-in forwards; }
 
 .sdp-overlay {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 201;
@@ -31,25 +32,11 @@
   background: #070b16;
   border-left: 1px solid #1e2535;
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5);
-  /* Its own scroll context: the panel is usually taller than the viewport,
-     and the page behind it is scroll-locked while it's open (see
-     Sites.jsx) so the two can't fight over the wheel. */
   overflow-y: auto; overscroll-behavior: contain;
   padding: 14px; display: flex; flex-direction: column; gap: 10px;
-  /* Slides in from the right edge. The easing is deliberately
-     decelerating (fast start, soft landing) rather than linear — it reads
-     as the panel arriving and settling, which is what makes a slide feel
-     deliberate instead of mechanical. */
-  animation: sdp-slide .26s cubic-bezier(.22, 1, .36, 1);
+  animation: sdp-slide .34s cubic-bezier(.22, 1, .36, 1);
 }
-
-/* Closing: the panel unmounts the instant a site is deselected, so there is
-   no exit animation to attach an animation to. Rather than keep the whole
-   overlay mounted purely to animate its own disappearance — which would
-   also keep every tab's data subscribed for a site nobody is looking at —
-   the close is instant on purpose. Opening is the moment that benefits
-   from motion (it shows where the panel came from); closing back to a
-   table the user was already looking at does not need explaining. */
+.sdp-overlay.closing { animation: sdp-slide-out .28s cubic-bezier(.4, 0, 1, 1) forwards; }
 
 .sdp-close {
   position: sticky; top: 0; align-self: flex-end; z-index: 1;
@@ -62,7 +49,9 @@
 .sdp-close:hover { background: #1a2338; color: #fff; }
 
 @keyframes sdp-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sdp-fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sdp-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes sdp-slide-out { from { transform: translateX(0); } to { transform: translateX(100%); } }
 
 /* Respect a reduced-motion preference — a full-height panel flying in is
    exactly the kind of large movement that setting exists to suppress. */
@@ -130,7 +119,7 @@
 .foot-text { font-size: 11px; color: #5a6480; }
 
 /* ===== SITE DETAIL PANEL ===== */
-.sdp { width: 100%; background: #061323; border: 1px solid #1e2535; border-radius: 10px; overflow: hidden; }
+.sdp { width: 100%; background: #061323; border: 1px solid #1e2535; border-radius: 10px; }
 .sdp-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 16px 12px; border-bottom: 1px solid #1e2535; }
 .sdp-site-info { display: flex; align-items: flex-start; gap: 12px; }
 .sdp-wp-logo { width: 44px; height: 44px; border-radius: 10px; background: #0073aa; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0; }
@@ -204,7 +193,7 @@
 
 .sdp-section-title { font-size: 13px; font-weight: 600; color: #fff; }
 .sdp-chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.sdp-chart-wrap { height: 110px; position: relative; }
+.sdp-chart-wrap { height: 190px; position: relative; }
 
 /* ===== SITE DETAIL TABS ===== */
 .sdp-tab-content { display: none; }

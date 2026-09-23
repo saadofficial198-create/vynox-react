@@ -15,6 +15,11 @@ import { useCachedData, useCachedFetch, useInvalidate } from '../context/DataCac
 import { resolveHomePerfScoresBatch } from '../perfScore';
 import '../styles/sites.css';
 
+// Must match .sdp-overlay.closing's animation duration in sites.css — the
+// panel stays mounted for exactly this long so the exit animation can play
+// before React removes it.
+const CLOSE_ANIM_MS = 280;
+
 const alertCls = n => n === 0 ? 'an-zero' : n >= 6 ? 'an-red' : 'an-orange';
 const updCls   = n => n === 0 ? 'upd-zero' : n >= 7 ? 'upd-red' : 'upd-orange';
 
@@ -1294,6 +1299,16 @@ export default function Sites() {
   // already covering the table the user came to look at. Selection is
   // driven purely by the user clicking a row.
 
+  // Closing plays an exit animation, so the panel can't unmount the instant
+  // selectedId clears — it has to stay mounted for the length of that
+  // animation first. closeOverlay() marks it closing, then clears the
+  // selection when the animation is done.
+  const [closing, setClosing] = useState(false);
+  const closeOverlay = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => { setSelectedId(null); setClosing(false); }, CLOSE_ANIM_MS);
+  }, []);
+
   // Open every site on Overview. Without this the tab is shared state
   // across selections, so closing one site on (say) Screenshots and opening
   // a different one lands straight in that tab — which in an overlay reads
@@ -1308,10 +1323,10 @@ export default function Sites() {
   // every page render for a key it would ignore.
   useEffect(() => {
     if (!selectedId) return;
-    const onKey = (e) => { if (e.key === 'Escape') setSelectedId(null); };
+    const onKey = (e) => { if (e.key === 'Escape') closeOverlay(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId]);
+  }, [selectedId, closeOverlay]);
 
   // The page behind a scrollable overlay must not scroll with it — without
   // this, scrolling the panel to its end carries on scrolling the sites
@@ -1557,9 +1572,9 @@ export default function Sites() {
             looking at. */}
         {selected && (
           <>
-            <div className="sdp-backdrop" onClick={() => setSelectedId(null)} />
-            <div className="sdp-overlay" role="dialog" aria-modal="true" aria-label={`${selected.name} details`}>
-              <button className="sdp-close" onClick={() => setSelectedId(null)} aria-label="Close details">✕</button>
+            <div className={`sdp-backdrop${closing ? ' closing' : ''}`} onClick={closeOverlay} />
+            <div className={`sdp-overlay${closing ? ' closing' : ''}`} role="dialog" aria-modal="true" aria-label={`${selected.name} details`}>
+              <button className="sdp-close" onClick={closeOverlay} aria-label="Close details">✕</button>
           <div className="sdp">
             {selected && (
               <>
