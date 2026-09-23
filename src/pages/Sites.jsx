@@ -1294,6 +1294,15 @@ export default function Sites() {
   // already covering the table the user came to look at. Selection is
   // driven purely by the user clicking a row.
 
+  // Open every site on Overview. Without this the tab is shared state
+  // across selections, so closing one site on (say) Screenshots and opening
+  // a different one lands straight in that tab — which in an overlay reads
+  // as the wrong panel having opened, since there's no persistent column to
+  // make the carried-over tab feel like continuity.
+  useEffect(() => {
+    if (selectedId) setTab('overview');
+  }, [selectedId]);
+
   // Close the overlay on Escape, the same as clicking the backdrop. Bound
   // only while something is actually selected so this isn't listening on
   // every page render for a key it would ignore.
