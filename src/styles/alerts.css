@@ -191,8 +191,6 @@
   overflow-y: auto; padding: 20px;
   display: flex; flex-direction: column; gap: 20px;
 }
-.sol-body::-webkit-scrollbar { width: 4px; }
-.sol-body::-webkit-scrollbar-thumb { background: #1e2535; border-radius: 2px; }
 
 .sol-summary { font-size: 13px; color: #8a93a8; line-height: 1.65; }
 
